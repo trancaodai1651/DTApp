@@ -27,6 +27,12 @@
 .cloud-settings>p:not(.field-help){font-size:12px;line-height:1.7;color:#7d7c87;margin-top:9px}
 .cloud-settings .connected{background:#dfe2ee;color:#374963}
 .cloud-settings .provider-actions{flex-wrap:wrap}
+.cloud-advanced{margin-top:13px;border-top:1px solid var(--line);padding-top:10px}
+.cloud-advanced summary{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;list-style:none;color:#657b94;font-size:13px;font-weight:600}
+.cloud-advanced summary::-webkit-details-marker{display:none}
+.cloud-advanced summary:after{content:'+';font-size:18px;font-weight:400;line-height:1}
+.cloud-advanced[open] summary:after{content:'−'}
+.cloud-advanced-fields{padding-top:10px}
 .provider-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .provider-heading .eyebrow{margin:0 0 5px;font-size:10px}
 .provider-heading h3{font-size:16px;font-weight:600}
@@ -81,6 +87,8 @@ html[data-theme=dark],html[data-theme=dark] body{background:#14171b;color:#e1e3e
 .app-shell[data-theme=dark] .draft-banner{background:#292d37;border-color:#454954;color:#d4d4e1}
 .app-shell[data-theme=dark] .version-tag{background:#292c33;color:#aeadb9}
 .app-shell[data-theme=dark] .provider-badge{background:#333645;color:#d3d1e5}
+.app-shell[data-theme=dark] .cloud-advanced{border-color:#3c3e4a}
+.app-shell[data-theme=dark] .cloud-advanced summary{color:#bdc8dc}
 .app-shell[data-theme=dark] .panel-tabs>button{color:#a2a3af}
 .app-shell[data-theme=dark] .panel-tabs>button.selected{color:#c8cce2}
 .app-shell[data-theme=dark] .step-heading>span:first-child,.app-shell[data-theme=dark] .step-number,.app-shell[data-theme=dark] .count{background:#30333e;color:#c5c3d9}
