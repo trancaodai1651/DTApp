@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="230" viewBox="0 0 780 230" role="img" aria-labelledby="title desc">
+  <title id="title">Tạp Hoá DT</title>
+  <desc id="desc">Logo cửa hàng Tạp Hoá DT với túi mua sắm xanh pastel và điểm nhấn nhiều màu.</desc>
+  <defs>
+    <linearGradient id="bag" x1="28" y1="42" x2="154" y2="176" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9EDCFF"/>
+      <stop offset="1" stop-color="#72B8F1"/>
+    </linearGradient>
+    <linearGradient id="dt" x1="446" y1="86" x2="608" y2="155" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4A9CE8"/>
+      <stop offset=".52" stop-color="#8F83E9"/>
+      <stop offset="1" stop-color="#FA887A"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(14 8)">
+    <path d="M42 75h105l-8 98a13 13 0 0 1-13 12H63a13 13 0 0 1-13-12l-8-98Z" fill="url(#bag)"/>
+    <path d="M68 80V57a28 28 0 0 1 56 0v23" fill="none" stroke="#4A79B7" stroke-linecap="round" stroke-width="11"/>
+    <path d="M66 117c8-10 18-10 26 0 8-10 18-10 26 0v15c0 15-11 26-26 26s-26-11-26-26v-15Z" fill="#FFFDF8" opacity=".95"/>
+    <circle cx="80" cy="127" r="3.5" fill="#344966"/><circle cx="105" cy="127" r="3.5" fill="#344966"/>
+    <path d="M85 139c4 4 11 4 15 0" fill="none" stroke="#F28C7E" stroke-linecap="round" stroke-width="3.5"/>
+    <path d="m34 84-13-14 5-19 17 8 7 16" fill="#FFD76E"/>
+    <path d="m149 47 4-12m15 21 12-3m-26 17 10 8" stroke="#F28C7E" stroke-linecap="round" stroke-width="5"/>
+    <circle cx="31" cy="142" r="6" fill="#B49BEF"/><path d="m159 124 4 8 8 1-6 5 2 8-8-4-7 4 1-8-6-5 8-1 4-8Z" fill="#FFE27F"/>
+  </g>
+  <text x="207" y="105" fill="#293B55" font-family="Inter, 'Be Vietnam Pro', Arial, sans-serif" font-size="39" font-weight="700" letter-spacing="-.8">Tạp Hoá</text>
+  <text x="203" y="177" fill="url(#dt)" font-family="Inter, 'Be Vietnam Pro', Arial, sans-serif" font-size="67" font-weight="800" letter-spacing="1">DT</text>
+  <path d="M326 151h181" stroke="#DCE9F6" stroke-linecap="round" stroke-width="3"/>
+  <text x="526" y="161" fill="#71839C" font-family="Inter, 'Be Vietnam Pro', Arial, sans-serif" font-size="16" font-weight="600" letter-spacing="2">GẦN GŨI · TƯƠI VUI</text>
+  <circle cx="719" cy="80" r="8" fill="#F6AA84"/><circle cx="740" cy="104" r="5" fill="#A78EEB"/>
+</svg>
