@@ -197,3 +197,4 @@ input,select,textarea{font-size:15px}
 .settings-note p{font-size:13px}
 .help-footnote{font-size:12px}
 @media(max-width:900px){.breadcrumbs,.breadcrumbs strong{font-size:13px}.eyebrow{font-size:11px}.page-title p{font-size:14px}.privacy-note,.field-help{font-size:13px}.image-file small{font-size:12px}.template-card>strong{font-size:13px}.template-card>small{font-size:12px}}
+@media(max-height:800px) and (min-width:901px){.sidebar-note{display:none}}
