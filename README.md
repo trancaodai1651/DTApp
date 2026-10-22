@@ -52,7 +52,7 @@ Không đóng gói khóa API vào mã frontend, biến `VITE_*`, GitHub Pages ha
 1. Cài Node.js 24 LTS x64; sao chép mã nguồn, chạy các lệnh cài và build ở trên. Máy server có thể là Windows 10 x64; client là web, Windows hoặc macOS.
 2. Mặc định Node chỉ nghe `127.0.0.1:8787`. Dùng IIS reverse proxy hoặc reverse proxy tương đương để cung cấp HTTPS cho `/` và `/api/` qua tên miền của bạn. Cho phép request body ít nhất 34 MB và timeout 120 giây.
 3. Đặt `APP_ACCESS_TOKEN` đủ dài/ngẫu nhiên trong `.env` trước khi cho phép truy cập từ bên ngoài. Nếu trực tiếp bind `HOST=0.0.0.0`, server bắt buộc có token. Nhập token này trong Cài đặt kết nối trên client. Token là cơ chế truy cập cho nhóm nhỏ; cần bổ sung đăng nhập và hạn mức theo người dùng trước khi mở dịch vụ công cộng.
-4. Thêm đúng origin web vào `ALLOWED_ORIGINS`, ví dụ `https://tenban.github.io,https://poster.tenmien.vn,app://dt`. Chỉ nhập scheme + host (+ port nếu có), không có đường dẫn `/DTApp` và không có dấu `/` cuối.
+4. `.env.example` đã cho phép origin `https://trancaodai1651.github.io` dùng với GitHub Pages này. Nếu bạn dùng tên miền riêng, thêm đúng origin vào `ALLOWED_ORIGINS`, ví dụ `https://poster.tenmien.vn`; chỉ nhập scheme + host (+ port nếu có), không có đường dẫn `/DTApp` và không có dấu `/` cuối. Khởi động lại server sau khi sửa.
 5. Chạy server bằng dịch vụ Windows/process manager đã cấu hình tự khởi động. Không đưa `.env` vào thư mục web công khai; chỉ `dist/` được phục vụ.
 
 Ảnh chỉ tồn tại trong RAM trong khi xử lý; server không chủ động lưu ảnh hay ghi ảnh/khóa vào log. Máy chủ giới hạn một tác vụ xoá nền và hai tác vụ gợi ý đồng thời, tối đa 30 yêu cầu AI/phút/IP. Khi dùng reverse proxy, chưa dùng `X-Forwarded-For`: các client sẽ chia sẻ hạn mức IP của proxy; cần bổ sung cấu hình proxy đáng tin cậy cho môi trường nhiều người dùng.
@@ -61,7 +61,7 @@ Không đóng gói khóa API vào mã frontend, biến `VITE_*`, GitHub Pages ha
 
 Workflow `.github/workflows/pages.yml` build và triển khai thư mục `dist/`, tương thích cả đường dẫn repo `/DTApp/` nhờ asset URL tương đối. Trong repo GitHub chọn **Settings → Pages → Source: GitHub Actions** rồi đẩy nhánh `main` hoặc chạy workflow thủ công.
 
-GitHub Pages chỉ chứa frontend. Sau khi mở web, vào **Cài đặt kết nối**, nhập URL HTTPS của API server và mã truy cập server. Thêm origin GitHub Pages vào allowlist trên server. API profiles được mã hóa trong trình duyệt của người dùng; workflow Pages không nhận các key này.
+GitHub Pages chỉ chứa frontend. Sau khi mở web, vào **Cài đặt kết nối**, nhập URL HTTPS của API server và mã truy cập server. Mẫu `.env.example` đã allowlist origin `https://trancaodai1651.github.io` cho site này; nếu dùng tên miền riêng, thêm origin đó vào `ALLOWED_ORIGINS`. API profiles được mã hóa trong trình duyệt của người dùng; workflow Pages không nhận các key này.
 
 ## Supabase
 

@@ -6,8 +6,9 @@ Windows 11 Pro x64, Node.js 24.16.0. Web được chạy bằng server Node tạ
 
 ## Đã đạt
 
-- `npm run build`: TypeScript và Vite build thành công. Frontend nén gzip khoảng 88 KB JS, font tự lưu cùng web, không cần tải font từ CDN.
-- `npm test`: 6/6 bài kiểm tra đạt. Có suy luận U²-Net thật, kiểm tra PNG alpha, giữ nắp chai và tỷ lệ mặt nạ trên ảnh dọc; có kiểm tra token, CORS, dữ liệu ảnh và lỗi chưa cấu hình AI.
+- `npm run build`: TypeScript và Vite build thành công. Bundle JavaScript khoảng 542 KB (160 KB gzip); font được đóng gói cùng web, không cần tải font từ CDN.
+- `npm test`: 7/7 bài kiểm tra đạt. Có suy luận U²-Net thật, kiểm tra PNG alpha, giữ nắp chai và tỷ lệ mặt nạ trên ảnh dọc; có kiểm tra token, CORS, dữ liệu ảnh, lỗi thiếu key và Claude dùng khóa riêng theo request.
+- Xác minh UI GitHub Pages đã triển khai: mục lưu/chuyển nhiều API cá nhân, bốn provider, và trang hướng dẫn hiển thị đầy đủ tiếng Việt/English.
 - Tải ảnh JPG qua bộ chọn tệp trong trình duyệt, xoá nền thật qua server, hiển thị trạng thái hoàn tất và ảnh kết quả.
 - Đối chiếu PNG nền trong suốt trên nền màu tương phản; sửa lỗi resize mask dùng `cover` thay vì `fill` và lỗi raw grayscale mở rộng thành nhiều kênh. Bài kiểm tra độ rộng nắp chai chống tái xuất hiện lỗi kéo giãn mask.
 - Giữ tên người dùng đã nhập khi thay ảnh, thay mẫu, đổi tỷ lệ, hoàn tác và làm lại.
@@ -20,7 +21,7 @@ Windows 11 Pro x64, Node.js 24.16.0. Web được chạy bằng server Node tạ
 
 ## Phân biệt kiểm tra thực và mô phỏng
 
-Xoá nền dùng mô hình ONNX thật trên CPU. Gợi ý tên/mô tả đã được kiểm tra request/response với adapter giả lập OpenAI và Claude; chưa gọi API nhà cung cấp thật vì chưa có key người dùng. Khi thiếu key cá nhân và khóa dự phòng server, API trả thông báo rõ ràng, không tạo kết quả giả gắn nhãn AI.
+Xoá nền dùng mô hình ONNX thật trên CPU. Gợi ý tên/mô tả đã được kiểm tra request/response với adapter giả lập OpenAI và Claude; chưa gọi API nhà cung cấp thật vì chưa có key người dùng. Khi thiếu key cá nhân và khóa dự phòng server, API trả thông báo rõ ràng, không tạo kết quả giả gắn nhãn AI. Kho khóa web và IPC Electron đã được kiểm tra bằng build/typecheck; chưa nhập khóa thật hoặc kiểm thử runtime trên máy macOS.
 
 ## Nền tảng và phát hành
 
@@ -31,7 +32,7 @@ Xoá nền dùng mô hình ONNX thật trên CPU. Gợi ý tên/mô tả đã đ
 | Windows x64 | Đóng gói NSIS/ZIP; kiểm tra cấu trúc PE và nội dung ASAR; chưa kiểm tra cài đặt trên máy sạch |
 | Windows ARM64 | Đóng gói NSIS/ZIP; kiểm tra cấu trúc PE; chưa chạy trên thiết bị ARM64 |
 | macOS Intel / ARM64 | Có cấu hình và workflow build trên runner Mac; chưa tạo bộ cài hoặc kiểm tra runtime |
-| GitHub Pages | Có workflow; chưa triển khai vì chưa có repository đích |
+| GitHub Pages | Workflow thành công; giao diện và trang hướng dẫn API đã được xác minh trực tiếp trên site |
 
 Các bộ cài chưa được ký bằng chứng chỉ phát hành của chủ dự án. Các mẫu là bộ đầu tiên và chưa thay thế kiểm thử với ảnh sản phẩm thực tế của từng ngành hàng.
 

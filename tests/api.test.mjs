@@ -31,6 +31,8 @@ test('access token and origin allowlist protect both AI routes', async () => {
     assert.equal((await fetch(`${base}/api/health`, { headers: { Origin: 'https://untrusted.invalid', Authorization: 'Bearer private-test-token' } })).status, 403);
     const preflight = await fetch(`${base}/api/remove-background`, { method: 'OPTIONS', headers: { Origin: 'app://dt' } });
     assert.equal(preflight.status, 204); assert.equal(preflight.headers.get('access-control-allow-origin'), 'app://dt');
+    const pagesPreflight = await fetch(`${base}/api/suggestions`, { method: 'OPTIONS', headers: { Origin: 'https://trancaodai1651.github.io' } });
+    assert.equal(pagesPreflight.status, 204); assert.equal(pagesPreflight.headers.get('access-control-allow-origin'), 'https://trancaodai1651.github.io');
   });
 });
 test('missing provider key produces an actionable error without fabricated AI content', async () => {
