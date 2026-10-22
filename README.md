@@ -7,7 +7,8 @@
 - 8 mẫu: thiên nhiên, tối giản, tạp chí, trẻ trung, cao cấp, khuyến mãi, công nghệ và thủ công. Bố cục tự thay đổi theo khổ ảnh.
 - 6 khổ xuất: 1080×1080, 1080×1350, 1080×1920, 1920×1080, 1080×1440, A4 2480×3508 px.
 - Nhập ảnh JPG/PNG/WebP, kéo thả, xoá nền trên server bằng U²-Net; khôi phục ảnh gốc.
-- Gợi ý tên và mô tả từ ảnh bằng API thị giác trên server. Khi chưa có khóa API, chức năng này báo chưa cấu hình. Câu chữ tham khảo theo nhóm sản phẩm là chức năng riêng và được ghi rõ chưa phân tích ảnh.
+- Gợi ý tên và mô tả từ ảnh qua OpenAI/ChatGPT, Gemini, Claude hoặc Grok trên server; có thể thêm nhiều API profile và chuyển provider/tài khoản ngay trong Cài đặt.
+- Trang hướng dẫn song ngữ chỉ cách lấy API key từ trang chính thức. Web mã hóa profile trong hồ sơ trình duyệt; ứng dụng Windows/macOS dùng `safeStorage` của hệ điều hành. Khóa cá nhân không đồng bộ qua Supabase.
 - Sửa nội dung, thương hiệu, giá, nhãn, lời kêu gọi hành động; thay màu; chỉnh vị trí/kích thước/góc xoay/bóng đổ ảnh; hoàn tác và làm lại.
 - Xuất PNG/JPG ở độ phân giải 1× hoặc 2×, lưu dự án trong IndexedDB và xuất/nhập tệp `.dtposter.json` để chuyển máy.
 - Đồng bộ poster và ảnh riêng tư vào Supabase Storage/Postgres theo tài khoản đăng nhập, có Row Level Security.
@@ -30,15 +31,21 @@ Mở `http://127.0.0.1:8787`. Server phục vụ cả thư mục web `dist/` và
 
 Để phát triển giao diện, chạy `npm run dev` trong terminal thứ hai; Vite chuyển `/api` đến server cổng 8787.
 
-### Cấu hình gợi ý tên và mô tả từ ảnh
+### Thêm API cá nhân
+
+Mở **Cài đặt kết nối → API cá nhân**, chọn OpenAI/ChatGPT, Gemini, Claude hoặc Grok, dán API key và nhấn **Lưu API trên thiết bị**. Có thể lưu nhiều profile và chọn **Dùng API này** để chuyển linh hoạt. Xem [hướng dẫn song ngữ lấy API](https://trancaodai1651.github.io/DTApp/api-guide.html) hoặc [hướng dẫn đầy đủ](docs/AI_SETUP.md).
+
+Khi dùng gợi ý từ ảnh, key, ảnh và thông tin sản phẩm được gửi tới server AI đã cấu hình rồi chuyển tiếp tới provider. Chỉ kết nối tới server đáng tin cậy. Server không lưu key cá nhân; background removal dùng U²-Net và không cần provider key.
+
+### API mặc định cho máy chủ (tuỳ chọn)
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Chọn `AI_PROVIDER=openai`, `gemini` hoặc `grok` trong `.env` trên **server**, rồi điền khóa tương ứng (`OPENAI_API_KEY`, `GEMINI_API_KEY` hoặc `XAI_API_KEY`). Xem [hướng dẫn cấu hình AI](docs/AI_SETUP.md). AI có thể phát sinh phí theo tài khoản nhà cung cấp.
+Quản trị viên có thể đặt API dự phòng trong `.env` trên **server** bằng `AI_PROVIDER` và khóa `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` hoặc `XAI_API_KEY`. API cá nhân trong app sẽ ưu tiên hơn cấu hình dự phòng. API có thể phát sinh phí và hạn mức riêng theo tài khoản nhà cung cấp.
 
-Không đặt khóa AI trong mã frontend, biến `VITE_*`, GitHub Pages hay bộ cài desktop. Tệp `.env` đã được bỏ qua bởi Git. Chỉ ảnh nhỏ được gửi tới nhà cung cấp khi người dùng yêu cầu gợi ý; ảnh xoá nền được xử lý trên server.
+Không đóng gói khóa API vào mã frontend, biến `VITE_*`, GitHub Pages hay bộ cài desktop. `.env` đã được bỏ qua bởi Git. Các API cá nhân do người dùng nhập được lưu mã hóa tại chỗ, không gửi đến Supabase. Chỉ khi yêu cầu gợi ý thì ảnh, thông tin và key đang chọn mới gửi qua server tới nhà cung cấp; ảnh xóa nền được xử lý trên server.
 
 ### Đưa lên máy chủ Windows 10
 
@@ -54,7 +61,7 @@ Không đặt khóa AI trong mã frontend, biến `VITE_*`, GitHub Pages hay b�
 
 Workflow `.github/workflows/pages.yml` build và triển khai thư mục `dist/`, tương thích cả đường dẫn repo `/DTApp/` nhờ asset URL tương đối. Trong repo GitHub chọn **Settings → Pages → Source: GitHub Actions** rồi đẩy nhánh `main` hoặc chạy workflow thủ công.
 
-GitHub Pages chỉ chứa frontend. Sau khi mở web, vào **Cài đặt kết nối**, nhập URL HTTPS của API server và mã truy cập server. Thêm origin GitHub Pages vào allowlist trên server. Không có khóa AI trong workflow Pages.
+GitHub Pages chỉ chứa frontend. Sau khi mở web, vào **Cài đặt kết nối**, nhập URL HTTPS của API server và mã truy cập server. Thêm origin GitHub Pages vào allowlist trên server. API profiles được mã hóa trong trình duyệt của người dùng; workflow Pages không nhận các key này.
 
 ## Supabase
 

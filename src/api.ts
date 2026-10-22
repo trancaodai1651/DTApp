@@ -1,4 +1,5 @@
 export interface Connection { url: string; token: string }
+export interface AIRequestCredential { provider: string; apiKey: string; model: string }
 export function connectionUrl(value: string) {
   if (!value.trim()) return '';
   const url = new URL(value.trim());
@@ -6,13 +7,14 @@ export function connectionUrl(value: string) {
   if (url.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('Kết nối server từ xa cần HTTPS để gửi ảnh an toàn.');
   return url.href.replace(/\/$/, '');
 }
-export async function apiRequest<T>(connection: Connection, endpoint: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+export async function apiRequest<T>(connection: Connection, endpoint: string, body?: unknown, signal?: AbortSignal, credential?: AIRequestCredential): Promise<T> {
   const base = connectionUrl(connection.url);
+  const requestBody = endpoint === 'suggestions' && credential && body && typeof body === 'object' && !Array.isArray(body) ? { ...body, ai: credential } : body;
   let response: Response;
   try { response = await fetch(`${base}/api/${endpoint}`, {
-    method: body ? 'POST' : 'GET',
-    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
+    method: requestBody ? 'POST' : 'GET',
+    headers: { ...(requestBody ? { 'Content-Type': 'application/json' } : {}), ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
+    body: requestBody ? JSON.stringify(requestBody) : undefined,
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(90000)]) : AbortSignal.timeout(90000),
   }); } catch (error) {
     if (signal?.aborted) throw error;

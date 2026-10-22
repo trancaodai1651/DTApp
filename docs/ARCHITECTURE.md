@@ -8,9 +8,10 @@ flowchart LR
     Desktop[Electron: Windows x64/ARM64 & macOS Intel/ARM64] --> UI
     UI --> Local[IndexedDB: thiết kế trên máy]
     UI --> Export[PNG / JPG / JSON dự án]
-    UI -->|HTTPS + Bearer token| API[Node.js API trên Windows]
+    UI -->|HTTPS + Bearer token + API profile cho từng request| API[Node.js API trên Windows]
     API --> BG[ONNX Runtime CPU + U2Net: xoá nền]
-    API -->|Ảnh thu nhỏ + thông tin| Vision[API thị giác: tên & mô tả]
+    API -->|Ảnh + thông tin + khóa đang chọn| Vision[OpenAI / Gemini / Claude / Grok]
+    UI --> Vault[Kho khóa cục bộ mã hóa]
 ```
 
 `src/renderer.ts` là bộ dựng poster dùng chung giữa preview, thumbnail và xuất ảnh, tránh xuất ảnh bị khác bố cục so với màn hình. Canvas sử dụng font đóng gói, không phụ thuộc Google Fonts/CDN. Các mẫu được khai báo trong `src/model.ts`; renderer thay bố cục theo khổ dọc/ngang.
@@ -23,13 +24,13 @@ flowchart LR
 | --- | --- |
 | GET `/api/health` | Trạng thái server, model, khả năng gợi ý đã cấu hình |
 | POST `/api/remove-background` | Nhận `{ image: dataURL }`; trả PNG alpha và kích thước |
-| POST `/api/suggestions` | Nhận ảnh, tên, nhóm, mô tả; trả ba tên và ba mô tả |
+| POST `/api/suggestions` | Nhận ảnh, tên, nhóm, mô tả và API profile tùy chọn; trả ba tên và ba mô tả |
 
 Không tự thay tên người dùng đã nhập khi nhận gợi ý AI. Nếu tên trống và AI trả kết quả, áp dụng gợi ý đầu; các gợi ý còn lại đều có thể bấm chọn. Không tự bịa thành phần, công dụng, giá hay thông số từ ảnh.
 
 ## Dữ liệu và khóa
 
-Thiết kế và ảnh nằm trong IndexedDB của browser/profile desktop, có bản nháp tự lưu. Tệp JSON dự án chứa ảnh nên có thể lớn; người dùng có thể chuyển máy bằng xuất/nhập. Chưa có đồng bộ giữa các thiết bị. Mã truy cập server lưu sessionStorage; địa chỉ server và bộ thương hiệu lưu localStorage. Khóa nhà cung cấp AI chỉ nằm trong biến môi trường server.
+Thiết kế và ảnh nằm trong IndexedDB của browser/profile desktop, có bản nháp tự lưu. API profiles web được mã hóa AES-GCM bằng Web Crypto và lưu trong IndexedDB của browser hiện tại; app desktop mã hóa JSON bằng Electron `safeStorage` rồi ghi trong thư mục dữ liệu người dùng. Khóa không nằm trong localStorage, Supabase, GitHub Pages hay database của server và không đồng bộ giữa thiết bị. Server dùng key profile request-only trong RAM hoặc khóa dự phòng `.env`; body request không được log.
 
 ## Các bước tiếp theo cho bản thương mại
 

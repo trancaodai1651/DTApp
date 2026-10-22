@@ -51,6 +51,32 @@ test('vision adapter sends image and strict schema, validates provider output', 
     assert.equal(response.status, 200); assert.deepEqual(await response.json(), { ...expected, source: 'ai' });
   });
 });
+test('uses a per-request Claude API key without requiring or persisting a server key', async () => {
+  const expected = { names: ['Mộc lành', 'Tinh dầu an nhiên', 'Hương dịu'], descriptions: ['Một chút thư thái cho ngày mới.', 'Hương thơm nhẹ nhàng cho không gian nhỏ.', 'Gợi cảm giác bình yên mỗi ngày.'] };
+  let upstreamCalls = 0;
+  await withServer(createApp({}, { fetch: async (url, options) => {
+    upstreamCalls++;
+    assert.equal(url, 'https://api.anthropic.com/v1/messages');
+    assert.equal(options.headers['x-api-key'], 'client-owned-key');
+    assert.equal(options.headers['anthropic-version'], '2023-06-01');
+    const body = JSON.parse(options.body);
+    assert.equal(body.model, 'claude-sonnet-5');
+    assert.equal(body.messages[0].content[1].source.type, 'base64');
+    assert.equal(body.messages[0].content[1].source.media_type, 'image/png');
+    assert.equal(body.output_config.format.type, 'json_schema');
+    assert.equal(body.output_config.format.schema.properties.names.maxItems, undefined);
+    return Response.json({ content: [{ type: 'text', text: JSON.stringify(expected) }] });
+  } }), async base => {
+    const response = await fetch(`${base}/api/suggestions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      image: 'data:image/png;base64,AAAA', name: '', category: 'Đồ thủ công', description: '', language: 'vi',
+      ai: { provider: 'anthropic', apiKey: 'client-owned-key', model: '' },
+    }) });
+    assert.equal(response.status, 200); assert.deepEqual(await response.json(), { ...expected, source: 'ai' });
+    const invalid = await fetch(`${base}/api/suggestions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: 'data:image/png;base64,AAAA', ai: { provider: 'custom', apiKey: 'bad' } }) });
+    assert.equal(invalid.status, 400);
+  });
+  assert.equal(upstreamCalls, 1);
+});
 test('real U2Net inference creates transparent PNG and preserves a visible product', { timeout: 90000 }, async () => {
   const sample = await sharp(await readFile(new URL('../public/sample-product.svg', import.meta.url))).flatten({ background: '#e8e4dc' }).jpeg().toBuffer();
   await withServer(createApp(), async base => {

@@ -20,7 +20,7 @@ Windows 11 Pro x64, Node.js 24.16.0. Web được chạy bằng server Node tạ
 
 ## Phân biệt kiểm tra thực và mô phỏng
 
-Xoá nền dùng mô hình ONNX thật trên CPU. Gợi ý tên/mô tả đã được kiểm tra cấu trúc request/response với adapter giả lập của nhà cung cấp; chưa gọi API thị giác thật vì chưa có `OPENAI_API_KEY`. Trường hợp thiếu khóa trả thông báo rõ ràng, không tạo kết quả giả gắn nhãn AI.
+Xoá nền dùng mô hình ONNX thật trên CPU. Gợi ý tên/mô tả đã được kiểm tra request/response với adapter giả lập OpenAI và Claude; chưa gọi API nhà cung cấp thật vì chưa có key người dùng. Khi thiếu key cá nhân và khóa dự phòng server, API trả thông báo rõ ràng, không tạo kết quả giả gắn nhãn AI.
 
 ## Nền tảng và phát hành
 

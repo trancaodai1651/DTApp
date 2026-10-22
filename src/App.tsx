@@ -6,6 +6,7 @@ import { readProduct, visionImage, backgroundImage } from './image-tools';
 import { localSuggestions, nameFromFile } from './suggestions.mjs';
 import { saveProject, getProjects, deleteProject, type SavedProject } from './storage';
 import { apiRequest, connectionUrl, type Connection } from './api';
+import { loadAIProfiles, saveAIProfiles, type AIProfile, type AIProviderId } from './ai-profiles';
 import { translate, type Language } from './i18n';
 import { configureCloud, configuredClient, deleteCloudProject, readCloudConfig, readCloudProjects, uploadCloudProject, type CloudConfig } from './cloud';
 import type { User } from '@supabase/supabase-js';
@@ -15,11 +16,12 @@ type Modal = 'export' | 'settings' | 'help' | null;
 interface Suggestions { names: string[]; descriptions: string[]; source: string }
 const safeRead = (key: string, fallback = '') => { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } };
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Có lỗi xảy ra. Hãy thử lại.';
-const aiProviders = {
-  openai: { label: 'ChatGPT / OpenAI', key: 'OPENAI_API_KEY', model: 'OPENAI_MODEL=gpt-4.1-mini', url: 'https://platform.openai.com/api-keys' },
-  gemini: { label: 'Gemini', key: 'GEMINI_API_KEY', model: 'GEMINI_MODEL=gemini-3.8-flash', url: 'https://aistudio.google.com/apikey' },
-  grok: { label: 'Grok / xAI', key: 'XAI_API_KEY', model: 'XAI_MODEL=grok-4.7', url: 'https://console.x.ai/team/default/api-keys' },
-} as const;
+const aiProviders: Record<AIProviderId, { label: string; key: string; modelEnv: string; model: string; url: string }> = {
+  openai: { label: 'ChatGPT / OpenAI', key: 'OPENAI_API_KEY', modelEnv: 'OPENAI_MODEL', model: 'gpt-4.1-mini', url: 'https://platform.openai.com/api-keys' },
+  gemini: { label: 'Gemini', key: 'GEMINI_API_KEY', modelEnv: 'GEMINI_MODEL', model: 'gemini-3.8-flash', url: 'https://aistudio.google.com/apikey' },
+  anthropic: { label: 'Claude / Anthropic', key: 'ANTHROPIC_API_KEY', modelEnv: 'ANTHROPIC_MODEL', model: 'claude-sonnet-5', url: 'https://console.anthropic.com/settings/keys' },
+  grok: { label: 'Grok / xAI', key: 'XAI_API_KEY', modelEnv: 'XAI_MODEL', model: 'grok-4.7', url: 'https://console.x.ai/team/default/api-keys' },
+};
 
 function PosterCanvas({ poster, language = 'vi', thumbnail = false, onMove, canvasRef }: { poster: Poster; language?: Language; thumbnail?: boolean; onMove?: (x: number, y: number) => void; canvasRef?: React.RefObject<HTMLCanvasElement | null> }) {
   const internalRef = useRef<HTMLCanvasElement>(null);
@@ -92,7 +94,15 @@ export default function App() {
   const [connection, setConnection] = useState<Connection>(() => ({ url: safeRead('dt.server', 'http://127.0.0.1:8787'), token: (() => { try { return sessionStorage.getItem('dt.token') || ''; } catch { return ''; } })() }));
   const [serverForm, setServerForm] = useState(connection);
   const [serverStatus, setServerStatus] = useState<'unknown' | 'online' | 'offline'>('unknown');
-  const [providerGuide, setProviderGuide] = useState<keyof typeof aiProviders>(() => (safeRead('dt.aiProvider', 'openai') in aiProviders ? safeRead('dt.aiProvider', 'openai') as keyof typeof aiProviders : 'openai'));
+  const [providerGuide, setProviderGuide] = useState<AIProviderId>(() => (safeRead('dt.aiProvider', 'openai') in aiProviders ? safeRead('dt.aiProvider', 'openai') as AIProviderId : 'openai'));
+  const [aiProfiles, setAiProfiles] = useState<AIProfile[]>([]);
+  const [aiProfilesReady, setAiProfilesReady] = useState(false);
+  const [aiVaultError, setAiVaultError] = useState('');
+  const [activeAIProfileId, setActiveAIProfileId] = useState(() => safeRead('dt.aiProfile'));
+  const [editingAIProfileId, setEditingAIProfileId] = useState<string | null>(null);
+  const [aiProfileName, setAiProfileName] = useState('');
+  const [aiProfileKey, setAiProfileKey] = useState('');
+  const [aiProfileModel, setAiProfileModel] = useState(() => aiProviders.openai.model);
   const [cloudForm, setCloudForm] = useState<CloudConfig>(() => readCloudConfig());
   const [cloudClient, setCloudClient] = useState(() => configuredClient());
   const [cloudUser, setCloudUser] = useState<User | null>(null);
@@ -112,11 +122,27 @@ export default function App() {
   }, []);
   const ratio = ratios.find(r => r.id === poster.ratio)!;
   const theme = styles.find(s => s.id === poster.style)!;
+  const activeAIProfile = aiProfiles.find(profile => profile.id === activeAIProfileId) || null;
   const dirty = savedPoster !== poster;
 
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(null), 5000); return () => clearTimeout(timeout); }, [toast]);
   useEffect(() => { document.documentElement.lang = language; try { localStorage.setItem('dt.language', language); } catch {} }, [language]);
   useEffect(() => { document.documentElement.dataset.theme = appearance; try { localStorage.setItem('dt.theme', appearance); } catch {} }, [appearance]);
+  useEffect(() => {
+    let mounted = true;
+    loadAIProfiles().then(profiles => {
+      if (!mounted) return;
+      setAiProfiles(profiles);
+      const preferred = safeRead('dt.aiProfile');
+      const active = profiles.some(profile => profile.id === preferred) ? preferred : profiles[0]?.id || '';
+      setActiveAIProfileId(active);
+      const selected = profiles.find(profile => profile.id === active);
+      if (selected) { setProviderGuide(selected.provider); setAiProfileModel(selected.model); }
+      if (active) try { localStorage.setItem('dt.aiProfile', active); } catch {}
+      setAiProfilesReady(true);
+    }).catch(error => { if (mounted) { setAiVaultError(errorMessage(error)); setAiProfilesReady(true); } });
+    return () => { mounted = false; };
+  }, []);
   useEffect(() => {
     if (!cloudClient) { setCloudUser(null); return; }
     cloudClient.auth.getSession().then(({ data }) => setCloudUser(data.session?.user || null));
@@ -128,7 +154,7 @@ export default function App() {
   }, [notify]);
   useEffect(() => {
     const controller = new AbortController();
-    apiRequest<{ status: string; provider?: string }>(connection, 'health', undefined, controller.signal).then(health => { setServerStatus('online'); if (health.provider && health.provider in aiProviders) setProviderGuide(health.provider as keyof typeof aiProviders); }).catch(() => { if (!controller.signal.aborted) setServerStatus('offline'); });
+    apiRequest<{ status: string }>(connection, 'health', undefined, controller.signal).then(() => setServerStatus('online')).catch(() => { if (!controller.signal.aborted) setServerStatus('offline'); });
     return () => controller.abort();
   }, [connection]);
   useEffect(() => {
@@ -179,7 +205,8 @@ export default function App() {
     if (!useAI) { setSuggestions(localSuggestions(poster)); return; }
     const controller = new AbortController(); abortRef.current = controller; setBusy(t("AI đang đọc ảnh và gợi ý nội dung…"));
     try {
-      const data = await apiRequest<Suggestions>(connection, 'suggestions', { image: await visionImage(poster.originalImage), name: poster.name, category: poster.category, description: poster.description, language }, controller.signal);
+      const credential = activeAIProfile ? { provider: activeAIProfile.provider, apiKey: activeAIProfile.apiKey, model: activeAIProfile.model } : undefined;
+      const data = await apiRequest<Suggestions>(connection, 'suggestions', { image: await visionImage(poster.originalImage), name: poster.name, category: poster.category, description: poster.description, language }, controller.signal, credential);
       if (controller.signal.aborted) return;
       setSuggestions(data); if (!poster.name.trim() && data.names[0]) update({ name: data.names[0] }); setServerStatus('online');
     } catch (e) { if (!controller.signal.aborted) notify(errorMessage(e), true); }
@@ -235,19 +262,55 @@ export default function App() {
     } catch (e) { notify(errorMessage(e), true); }
     if (importRef.current) importRef.current.value = '';
   }
+  async function saveAIProfile() {
+    if (!aiProfileName.trim() || !aiProfileKey.trim()) { notify(t('Nhập tên cấu hình và API key.'), true); return; }
+    if (!editingAIProfileId && aiProfiles.length >= 20) { notify(t('Mỗi thiết bị lưu tối đa 20 API.'), true); return; }
+    const profile: AIProfile = { id: editingAIProfileId || crypto.randomUUID(), name: aiProfileName.trim().slice(0, 80), provider: providerGuide, apiKey: aiProfileKey.trim(), model: aiProfileModel.trim() || aiProviders[providerGuide].model };
+    const next = editingAIProfileId ? aiProfiles.map(item => item.id === editingAIProfileId ? profile : item) : [profile, ...aiProfiles];
+    try {
+      await saveAIProfiles(next);
+      setAiProfiles(next); setActiveAIProfileId(profile.id); setEditingAIProfileId(null);
+      localStorage.setItem('dt.aiProfile', profile.id); localStorage.setItem('dt.aiProvider', profile.provider);
+      setAiProfileName(''); setAiProfileKey(''); setProviderGuide(profile.provider); setAiProfileModel(aiProviders[profile.provider].model); setAiVaultError('');
+      notify(t('API đã được mã hoá và lưu trên thiết bị.'));
+    } catch (error) { notify(errorMessage(error), true); }
+  }
+  async function activateAIProfile(profile: AIProfile) {
+    setActiveAIProfileId(profile.id); setProviderGuide(profile.provider);
+    try { localStorage.setItem('dt.aiProfile', profile.id); localStorage.setItem('dt.aiProvider', profile.provider); } catch {}
+    notify(t('Đã chuyển API đang sử dụng.'));
+  }
+  function editAIProfile(profile: AIProfile) {
+    setEditingAIProfileId(profile.id); setAiProfileName(profile.name); setAiProfileKey(profile.apiKey); setProviderGuide(profile.provider); setAiProfileModel(profile.model);
+  }
+  async function deleteAIProfile(profile: AIProfile) {
+    if (!window.confirm(t('Xóa API này khỏi kho khóa trên thiết bị?'))) return;
+    const next = aiProfiles.filter(item => item.id !== profile.id);
+    try {
+      await saveAIProfiles(next); setAiProfiles(next);
+      if (activeAIProfileId === profile.id) {
+        const nextActive = next[0]?.id || ''; setActiveAIProfileId(nextActive);
+        const selected = next[0];
+        if (selected) { setProviderGuide(selected.provider); setAiProfileModel(selected.model); }
+        if (nextActive) localStorage.setItem('dt.aiProfile', nextActive); else localStorage.removeItem('dt.aiProfile');
+      }
+      if (editingAIProfileId === profile.id) { setEditingAIProfileId(null); setAiProfileName(''); setAiProfileKey(''); }
+      notify(t('Đã xóa API khỏi thiết bị.'));
+    } catch (error) { notify(errorMessage(error), true); }
+  }
   async function checkServer() {
     setBusy(t("Đang kiểm tra kết nối…"));
     try {
       const next = { ...serverForm, url: connectionUrl(serverForm.url) };
-      const health = await apiRequest<{ backgroundRemoval: boolean; suggestions: boolean; provider?: string }>(next, 'health');
+      const health = await apiRequest<{ backgroundRemoval: boolean; suggestions: boolean }>(next, 'health');
       localStorage.setItem('dt.server', next.url); sessionStorage.setItem('dt.token', next.token); setConnection(next); setServerStatus('online');
-      if (health.provider && health.provider in aiProviders) { setProviderGuide(health.provider as keyof typeof aiProviders); localStorage.setItem('dt.aiProvider', health.provider); }
-      notify(health.suggestions ? 'Server sẵn sàng: xoá nền và gợi ý từ ảnh.' : 'Server xoá nền sẵn sàng. Cần cấu hình AI để gợi ý từ ảnh.');
+      const hasSuggestions = health.suggestions || !!activeAIProfile;
+      notify(hasSuggestions ? t('Server sẵn sàng: xoá nền và gợi ý từ ảnh.') : t('Server xoá nền sẵn sàng. Hãy thêm API AI hoặc cấu hình khóa trên server.'));
     } catch (e) { notify(errorMessage(e), true); } finally { setBusy(''); }
   }
   async function copyAISetup() {
     const provider = aiProviders[providerGuide];
-    const snippet = `AI_PROVIDER=${providerGuide}\n${provider.key}=paste_your_key_here\n${provider.model}`;
+    const snippet = `AI_PROVIDER=${providerGuide}\n${provider.key}=paste_your_key_here\n${provider.modelEnv}=${provider.model}`;
     try { await navigator.clipboard.writeText(snippet); notify(t('Đã sao chép cấu hình mẫu. Hãy dán vào .env trên máy chủ.')); }
     catch { notify(t('Trình duyệt không cho phép sao chép. Hãy thêm các dòng hiển thị trong tài liệu AI_SETUP.md vào .env.'), true); }
   }
@@ -363,7 +426,48 @@ export default function App() {
     {toast && <div className={`toast ${toast.error ? 'error' : ''}`} role={toast.error ? 'alert' : 'status'}>{toast.error ? <CircleHelp size={18} /> : <CheckCircle2 size={18} />}<span>{toast.text}</span><button className="icon-button" onClick={() => setToast(null)} aria-label={t("Đóng thông báo")}><X size={15} /></button></div>}
     {busy && <div className="busy-pill" role="status"><LoaderCircle size={17} className="spin" /><span>{busy}</span>{abortRef.current && <button onClick={() => abortRef.current?.abort()}>{t("Huỷ")}</button>}</div>}
     {modal === 'export' && <ModalBox title={t("Sẵn sàng toả sáng.")} close={closeModal}><p className="modal-subtitle">{t("Xuất poster hoàn chỉnh, không có watermark.")}</p><div className="export-summary"><div className="export-thumb"><PosterCanvas language={language} poster={poster} thumbnail /></div><div><strong>{poster.name || t('Thiết kế của bạn')}</strong><p>{theme.name} · {poster.ratio}</p><small>{ratio.width * exportScale} × {ratio.height * exportScale} px</small></div></div><label className="field-label" htmlFor="export-format">{t("Định dạng")}</label><select id="export-format" value={exportFormat} onChange={e => setExportFormat(e.target.value as 'png' | 'jpeg')}><option value="png">{t("PNG — chi tiết rõ nét")}</option><option value="jpeg">{t("JPG — dung lượng nhẹ")}</option></select><label className="field-label" htmlFor="export-scale">{t("Độ phân giải")}</label><select id="export-scale" value={exportScale} onChange={e => setExportScale(+e.target.value)}><option value="1">1× · {ratio.width} × {ratio.height} px</option><option value="2">2× · {ratio.width * 2} × {ratio.height * 2} px</option></select><button className="button primary full export-action" disabled={!!busy} onClick={exportImage}><ArrowDownToLine size={17} /> {t("Tải poster xuống")}</button><div className="export-project-links"><button className="text-button" onClick={projectFile}><Copy size={13} /> {t("Tải tệp để chỉnh sửa sau")}</button><button className="text-button" onClick={() => importRef.current?.click()}><Upload size={13} /> {t("Mở tệp thiết kế")}</button></div></ModalBox>}
-    {modal === 'settings' && <ModalBox title={t("Kết nối máy chủ AI")} close={closeModal}><p className="modal-subtitle">{t("Web và app dùng chung server để xoá nền, nhận diện ảnh và viết nội dung.")}</p><label className="field-label" htmlFor="server-url">{t("Địa chỉ server")}</label><input id="server-url" type="url" value={serverForm.url} onChange={e => setServerForm(s => ({ ...s, url: e.target.value }))} placeholder="https://poster-api.tenmien.vn" /><p className="field-help">{t("Để trống nếu web và API cùng tên miền. Server từ xa cần HTTPS.")}</p><label className="field-label" htmlFor="server-token">{t("Mã truy cập server (nếu có)")}</label><input id="server-token" type="password" value={serverForm.token} onChange={e => setServerForm(s => ({ ...s, token: e.target.value }))} placeholder={t("Mã do quản trị server cung cấp")} autoComplete="off" /><p className="field-help">{t("Mã chỉ giữ trong phiên này. Khóa nhà cung cấp AI được cấu hình riêng trên server.")}</p><section className="cloud-settings"><div className="provider-heading"><div><span className="eyebrow">SUPABASE CLOUD</span><h3>{t('Lưu thiết kế trên đám mây')}</h3></div><span className={`provider-badge ${cloudUser ? 'connected' : ''}`}>{cloudUser ? cloudUser.email : t('Chưa đăng nhập')}</span></div><p>{t('Nhập Project URL và publishable/anon key từ Supabase. Khóa này công khai; bảo vệ dữ liệu bằng đăng nhập và RLS, không dùng service_role key.')}</p><label className="field-label" htmlFor="supabase-url">Project URL</label><input id="supabase-url" type="url" value={cloudForm.url} onChange={e => setCloudForm(v => ({ ...v, url: e.target.value }))} placeholder="https://your-project.supabase.co" /><label className="field-label" htmlFor="supabase-anon">{t('Publishable key / anon key')}</label><input id="supabase-anon" type="text" value={cloudForm.anonKey} onChange={e => setCloudForm(v => ({ ...v, anonKey: e.target.value }))} placeholder="sb_publishable_…" autoComplete="off" /><div className="provider-actions"><button className="button secondary" onClick={connectCloud}><CheckCircle2 size={15} /> {t('Lưu cấu hình Supabase')}</button><a className="text-button" href="./poster_cloud.sql" target="_blank" rel="noreferrer">{t('Mở schema đồng bộ')} <ArrowUpRight size={13} /></a></div>{cloudClient && !cloudUser ? <><label className="field-label" htmlFor="cloud-email">Email</label><input id="cloud-email" type="email" value={cloudEmail} onChange={e => setCloudEmail(e.target.value)} autoComplete="email" /><label className="field-label" htmlFor="cloud-password">{t('Mật khẩu tài khoản Supabase')}</label><input id="cloud-password" type="password" value={cloudPassword} onChange={e => setCloudPassword(e.target.value)} autoComplete="current-password" /><div className="provider-actions"><button className="button primary" onClick={signInCloud} disabled={!!busy}>{t('Đăng nhập')}</button><button className="text-button" onClick={signUpCloud} disabled={!!busy}>{t('Tạo tài khoản mới')}</button></div></> : cloudUser ? <div className="provider-actions"><button className="button secondary" onClick={() => refreshCloudProjects()} disabled={!!busy}><RotateCcw size={14} /> {t('Đồng bộ ngay')}</button><button className="text-button" onClick={signOutCloud}>{t('Đăng xuất')}</button></div> : null}<p className="field-help">{t('Lưu thiết kế sẽ đồng bộ ảnh riêng tư và dữ liệu poster vào tài khoản Supabase đang đăng nhập. Mỗi tài khoản chỉ truy cập dữ liệu của mình.')}</p></section><section className="provider-help"><div className="provider-heading"><div><span className="eyebrow">{t('CẤU HÌNH TRÊN SERVER')}</span><h3>{t('Thêm API của nhà cung cấp AI')}</h3></div><span className="provider-badge">{t(aiProviders[providerGuide].label)}</span></div><p>{t('Chọn nhà cung cấp, lấy API key ở trang chính thức, rồi thêm khóa vào tệp .env trên máy chạy server.')}</p><label className="field-label" htmlFor="ai-provider">{t('Nhà cung cấp')}</label><select id="ai-provider" value={providerGuide} onChange={e => { const value = e.target.value as keyof typeof aiProviders; setProviderGuide(value); try { localStorage.setItem('dt.aiProvider', value); } catch {} }}>{Object.entries(aiProviders).map(([id, provider]) => <option key={id} value={id}>{t(provider.label)}</option>)}</select><div className="provider-actions"><a className="text-button" href={aiProviders[providerGuide].url} target="_blank" rel="noreferrer">{t('Tạo API key')} <ArrowUpRight size={13} /></a><button className="text-button" onClick={copyAISetup}><Copy size={13} /> {t('Sao chép cấu hình')}</button></div><pre className="env-snippet">{`AI_PROVIDER=${providerGuide}\n${aiProviders[providerGuide].key}=your_key_here\n${aiProviders[providerGuide].model}`}</pre><p className="field-help">{t('Dán cấu hình vào .env ở thư mục dự án trên Windows Server, thay your_key_here bằng khóa vừa tạo, rồi khởi động lại server. Không dán khóa vào GitHub Pages, mã nguồn hoặc VITE_ variables.')}</p><a className="text-button" href="./AI_SETUP.md" target="_blank" rel="noreferrer">{t('Mở hướng dẫn cài đặt đầy đủ')} <ArrowUpRight size={13} /></a></section><div className="settings-note"><ShieldCheck size={21} /><p>{t("Chỉ khi nhấn nút AI, ảnh và thông tin sản phẩm mới được gửi đến server đã chọn. Phần gợi ý nội dung có thể gửi ảnh tiếp đến nhà cung cấp AI của server.")}</p></div><button className="button primary full" onClick={checkServer} disabled={!!busy}><CheckCircle2 size={16} /> {t("Kiểm tra & lưu kết nối")}</button></ModalBox>}
+    {modal === 'settings' && <ModalBox title={t("Kết nối máy chủ AI")} close={closeModal}><p className="modal-subtitle">{t("Web và app dùng chung server để xoá nền, nhận diện ảnh và viết nội dung.")}</p><label className="field-label" htmlFor="server-url">{t("Địa chỉ server")}</label><input id="server-url" type="url" value={serverForm.url} onChange={e => setServerForm(s => ({ ...s, url: e.target.value }))} placeholder="https://poster-api.tenmien.vn" /><p className="field-help">{t("Để trống nếu web và API cùng tên miền. Server từ xa cần HTTPS.")}</p><label className="field-label" htmlFor="server-token">{t("Mã truy cập server (nếu có)")}</label><input id="server-token" type="password" value={serverForm.token} onChange={e => setServerForm(s => ({ ...s, token: e.target.value }))} placeholder={t("Mã do quản trị server cung cấp")} autoComplete="off" /><p className="field-help">{t("Mã chỉ giữ trong phiên này. API cá nhân được lưu mã hoá trên thiết bị.")}</p><section className="cloud-settings"><div className="provider-heading"><div><span className="eyebrow">SUPABASE CLOUD</span><h3>{t('Lưu thiết kế trên đám mây')}</h3></div><span className={`provider-badge ${cloudUser ? 'connected' : ''}`}>{cloudUser ? cloudUser.email : t('Chưa đăng nhập')}</span></div><p>{t('Nhập Project URL và publishable/anon key từ Supabase. Khóa này công khai; bảo vệ dữ liệu bằng đăng nhập và RLS, không dùng service_role key.')}</p><label className="field-label" htmlFor="supabase-url">Project URL</label><input id="supabase-url" type="url" value={cloudForm.url} onChange={e => setCloudForm(v => ({ ...v, url: e.target.value }))} placeholder="https://your-project.supabase.co" /><label className="field-label" htmlFor="supabase-anon">{t('Publishable key / anon key')}</label><input id="supabase-anon" type="text" value={cloudForm.anonKey} onChange={e => setCloudForm(v => ({ ...v, anonKey: e.target.value }))} placeholder="sb_publishable_…" autoComplete="off" /><div className="provider-actions"><button className="button secondary" onClick={connectCloud}><CheckCircle2 size={15} /> {t('Lưu cấu hình Supabase')}</button><a className="text-button" href="./poster_cloud.sql" target="_blank" rel="noreferrer">{t('Mở schema đồng bộ')} <ArrowUpRight size={13} /></a></div>{cloudClient && !cloudUser ? <><label className="field-label" htmlFor="cloud-email">Email</label><input id="cloud-email" type="email" value={cloudEmail} onChange={e => setCloudEmail(e.target.value)} autoComplete="email" /><label className="field-label" htmlFor="cloud-password">{t('Mật khẩu tài khoản Supabase')}</label><input id="cloud-password" type="password" value={cloudPassword} onChange={e => setCloudPassword(e.target.value)} autoComplete="current-password" /><div className="provider-actions"><button className="button primary" onClick={signInCloud} disabled={!!busy}>{t('Đăng nhập')}</button><button className="text-button" onClick={signUpCloud} disabled={!!busy}>{t('Tạo tài khoản mới')}</button></div></> : cloudUser ? <div className="provider-actions"><button className="button secondary" onClick={() => refreshCloudProjects()} disabled={!!busy}><RotateCcw size={14} /> {t('Đồng bộ ngay')}</button><button className="text-button" onClick={signOutCloud}>{t('Đăng xuất')}</button></div> : null}<p className="field-help">{t('Lưu thiết kế sẽ đồng bộ ảnh riêng tư và dữ liệu poster vào tài khoản Supabase đang đăng nhập. Mỗi tài khoản chỉ truy cập dữ liệu của mình.')}</p></section><section className="provider-help api-keys-panel">
+  <div className="provider-heading"><div><span className="eyebrow">{t('API CÁ NHÂN')}</span><h3>{t('Thêm và chuyển API')}</h3></div><span className="provider-badge">{activeAIProfile ? t('Đang dùng') : t('Chưa chọn API')}</span></div>
+  <p>{t('Lưu nhiều API riêng trên thiết bị này, chọn một API đang hoạt động rồi dùng AI gợi ý poster.')}</p>
+  <label className="field-label" htmlFor="ai-provider">{t('Nhà cung cấp')}</label>
+  <select id="ai-provider" value={providerGuide} onChange={event => { const value = event.target.value as AIProviderId; setProviderGuide(value); setAiProfileModel(aiProviders[value].model); try { localStorage.setItem('dt.aiProvider', value); } catch {} }}>
+    {Object.entries(aiProviders).map(([id, provider]) => <option key={id} value={id}>{t(provider.label)}</option>)}
+  </select>
+  <label className="field-label" htmlFor="ai-profile-name">{t('Tên cấu hình')}</label>
+  <input id="ai-profile-name" value={aiProfileName} maxLength={80} onChange={event => setAiProfileName(event.target.value)} placeholder={t('Ví dụ: Gemini cá nhân')} />
+  <label className="field-label" htmlFor="ai-profile-key">API key</label>
+  <input id="ai-profile-key" type="password" value={aiProfileKey} maxLength={4096} onChange={event => setAiProfileKey(event.target.value)} placeholder={t('Dán API key vừa tạo')} autoComplete="new-password" />
+  <label className="field-label" htmlFor="ai-profile-model">{t('Model (tuỳ chọn)')}</label>
+  <input id="ai-profile-model" value={aiProfileModel} maxLength={128} onChange={event => setAiProfileModel(event.target.value)} placeholder={aiProviders[providerGuide].model} />
+  <div className="provider-actions">
+    <button className="button primary" onClick={saveAIProfile} disabled={!aiProfilesReady}><CheckCircle2 size={15} /> {editingAIProfileId ? t('Cập nhật API') : t('Lưu API trên thiết bị')}</button>
+    {editingAIProfileId && <button className="text-button" onClick={() => { setEditingAIProfileId(null); setAiProfileName(''); setAiProfileKey(''); setAiProfileModel(aiProviders[providerGuide].model); }}>{t('Hủy sửa')}</button>}
+    <a className="text-button" href="./api-guide.html"><ArrowUpRight size={13} /> {t('Hướng dẫn lấy API')}</a>
+  </div>
+  {aiVaultError && <p className="field-help vault-error">{aiVaultError}</p>}
+  <p className="field-help">{t('Web mã hoá API trong hồ sơ trình duyệt này; app desktop dùng kho bảo mật của Windows hoặc macOS. API không được đồng bộ lên Supabase. Khi dùng AI, khóa, ảnh và thông tin sản phẩm được gửi tới server bạn đã chọn.')}</p>
+  <div className="api-profile-list">
+    {aiProfiles.map(profile => <article className="api-profile-row" key={profile.id}>
+      <div className="api-profile-info"><strong>{profile.name}</strong>{profile.id === activeAIProfileId && <span className="provider-badge connected">{t('Đang dùng')}</span>}<small>{t(aiProviders[profile.provider].label)} · {profile.model}</small><small>••••••••{profile.apiKey.slice(-4)}</small></div>
+      <div className="provider-actions">
+        <button className="text-button" onClick={() => activateAIProfile(profile)} disabled={profile.id === activeAIProfileId}>{t('Dùng API này')}</button>
+        <button className="text-button" onClick={() => editAIProfile(profile)}>{t('Sửa')}</button>
+        <button className="text-button danger-text" onClick={() => deleteAIProfile(profile)}>{t('Xóa')}</button>
+      </div>
+    </article>)}
+    {aiProfilesReady && aiProfiles.length === 0 && <p className="field-help">{t('Chưa lưu API nào trên thiết bị này.')}</p>}
+  </div>
+</section>
+<section className="provider-help server-provider-help">
+  <div className="provider-heading"><div><span className="eyebrow">{t('TÙY CHỌN CHO QUẢN TRỊ SERVER')}</span><h3>{t('API mặc định trên server')}</h3></div></div>
+  <p>{t('Nếu không chọn API cá nhân, server có thể dùng khóa mặc định trong tệp .env.')}</p>
+  <label className="field-label" htmlFor="server-ai-provider">{t('Nhà cung cấp')}</label>
+  <select id="server-ai-provider" value={providerGuide} onChange={event => { const value = event.target.value as AIProviderId; setProviderGuide(value); }}>
+    {Object.entries(aiProviders).map(([id, provider]) => <option key={id} value={id}>{t(provider.label)}</option>)}
+  </select>
+  <div className="provider-actions"><a className="text-button" href={aiProviders[providerGuide].url} target="_blank" rel="noreferrer">{t('Tạo API key')} <ArrowUpRight size={13} /></a><button className="text-button" onClick={copyAISetup}><Copy size={13} /> {t('Sao chép cấu hình server')}</button></div>
+  <pre className="env-snippet">{`AI_PROVIDER=${providerGuide}\n${aiProviders[providerGuide].key}=your_key_here\n${providerGuide.toUpperCase()}_MODEL=${aiProviders[providerGuide].model}`}</pre>
+</section><div className="settings-note"><ShieldCheck size={21} /><p>{t("Khi bạn dùng AI, ảnh và nội dung cùng API đang chọn được gửi tới server đã cấu hình để chuyển tiếp đến nhà cung cấp. Server không lưu API cá nhân.")}</p></div><button className="button primary full" onClick={checkServer} disabled={!!busy}><CheckCircle2 size={16} /> {t("Kiểm tra & lưu kết nối")}</button></ModalBox>}
     {modal === 'help' && <ModalBox title={t("Từ một bức ảnh đến một ý tưởng.")} close={closeModal} wide><p className="modal-subtitle">{t("Một không gian nhỏ để sản phẩm của bạn được nổi bật.")}</p><div className="help-steps">{[['01', 'Thêm ảnh', 'Chọn ảnh JPG, PNG hoặc WebP. Ảnh rõ nét, sản phẩm tách biệt với nền sẽ cho kết quả tốt hơn.'], ['02', 'Để AI hỗ trợ', 'Kết nối server trong Cài đặt. Nhấn Xoá nền hoặc Gợi ý tên & mô tả từ ảnh. Bạn luôn có thể sửa lại nội dung.'], ['03', 'Chọn diện mạo', 'Chọn một trong 8 phong cách, 6 tỷ lệ. Chỉnh màu, kích thước, vị trí, nhãn, giá và thương hiệu trong Tinh chỉnh.'], ['04', 'Lưu & chia sẻ', 'Xuất PNG/JPG ở 1× hoặc 2×. Lưu trên thiết bị, đồng bộ với Supabase hoặc tải tệp thiết kế để chuyển sang một máy khác.']].map(([step, title, description]) => <div key={step}><span>{step}</span><div><h3>{title}</h3><p>{description}</p></div></div>)}</div><p className="help-footnote">{t("Bản mẫu hiện dùng ảnh minh hoạ. Nội dung AI là gợi ý và cần được bạn kiểm tra trước khi sử dụng. Đăng nhập Supabase trong Cài đặt để đồng bộ thiết kế giữa các thiết bị.")}</p><button className="button primary full" onClick={closeModal}>{t("Bắt đầu sáng tạo")} <ArrowRight size={16} /></button></ModalBox>}
   </div>;
 }

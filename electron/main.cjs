@@ -1,4 +1,4 @@
-const { app, BrowserWindow, protocol } = require('electron');
+const { app, BrowserWindow, protocol, ipcMain, safeStorage, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 
@@ -7,6 +7,28 @@ const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 let window;
 app.whenReady().then(() => {
   const root = path.resolve(__dirname, '../dist');
+  const secureProfilesFile = path.join(app.getPath('userData'), 'ai-profiles.enc');
+  const assertTrustedRenderer = event => {
+    if (!event.senderFrame?.url.startsWith('app://dt/')) throw new Error('Untrusted application window.');
+  };
+  ipcMain.handle('dt:load-ai-profiles', async event => {
+    assertTrustedRenderer(event);
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('Kho mã hóa của hệ điều hành chưa sẵn sàng.');
+    try { return JSON.parse(safeStorage.decryptString(await fs.readFile(secureProfilesFile))); }
+    catch (error) { if (error.code === 'ENOENT') return []; throw new Error('Không giải mã được kho API desktop.'); }
+  });
+  ipcMain.handle('dt:save-ai-profiles', async (event, profiles) => {
+    assertTrustedRenderer(event);
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('Kho mã hóa của hệ điều hành chưa sẵn sàng.');
+    if (!Array.isArray(profiles) || profiles.length > 20 || JSON.stringify(profiles).length > 160_000) throw new Error('Danh sách API không hợp lệ hoặc vượt dung lượng cho phép.');
+    for (const profile of profiles) {
+      if (!profile || typeof profile.id !== 'string' || typeof profile.name !== 'string' || typeof profile.provider !== 'string' || typeof profile.apiKey !== 'string' || profile.apiKey.length > 4096 || typeof profile.model !== 'string') throw new Error('Thông tin API không hợp lệ.');
+    }
+    const encrypted = safeStorage.encryptString(JSON.stringify(profiles));
+    const temporary = `${secureProfilesFile}.tmp`;
+    await fs.writeFile(temporary, encrypted);
+    await fs.rename(temporary, secureProfilesFile);
+  });
   protocol.handle('app', async request => {
     const url = new URL(request.url);
     if (url.hostname !== 'dt') return new Response('Not found', { status: 404 });
@@ -21,8 +43,11 @@ app.whenReady().then(() => {
     } catch { return new Response('Not found', { status: 404 }); }
   });
   const open = () => {
-    window = new BrowserWindow({ width: 1520, height: 980, minWidth: 900, minHeight: 700, title: 'DT Poster Studio', backgroundColor: '#f7f8f5', autoHideMenuBar: true, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
-    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    window = new BrowserWindow({ width: 1520, height: 980, minWidth: 900, minHeight: 700, title: 'DT Poster Studio', backgroundColor: '#f7f8f5', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
+    window.webContents.setWindowOpenHandler(({ url }) => {
+      if (url.startsWith('https://')) void shell.openExternal(url);
+      return { action: 'deny' };
+    });
     window.webContents.on('will-navigate', (event, url) => { if (!url.startsWith('app://dt/')) event.preventDefault(); });
     window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => callback(false));
     window.loadURL('app://dt/');
