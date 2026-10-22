@@ -1,0 +1,9 @@
+{
+  "name": "dt-poster-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node --env-file-if-exists=../.env index.mjs", "postinstall": "node ../scripts/prepare-assets.mjs" },
+  "dependencies": { "express": "^5.1.0", "sharp": "^0.34.5", "onnxruntime-node": "1.23.2" },
+  "engines": { "node": ">=22.0.0" }
+}

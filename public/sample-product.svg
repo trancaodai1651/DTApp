@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="700" viewBox="0 0 520 700">
+  <defs>
+    <linearGradient id="glass" x1="0" x2="1"><stop stop-color="#4a2c16"/><stop offset=".12" stop-color="#8b552a"/><stop offset=".3" stop-color="#bd8546"/><stop offset=".51" stop-color="#a9682b"/><stop offset=".8" stop-color="#6c3d1c"/><stop offset="1" stop-color="#362717"/></linearGradient>
+    <linearGradient id="cap" x1="0" x2="1"><stop stop-color="#1b2822"/><stop offset=".32" stop-color="#48564a"/><stop offset=".7" stop-color="#25372b"/><stop offset="1" stop-color="#15251c"/></linearGradient>
+    <linearGradient id="label" x1="0" x2="1"><stop stop-color="#e5dbc1"/><stop offset=".4" stop-color="#f8efd8"/><stop offset="1" stop-color="#d2c8ac"/></linearGradient>
+    <linearGradient id="shine" x1="0" x2="1"><stop stop-color="#fff" stop-opacity=".3"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <path d="M332 570Q444 444 456 303Q376 339 394 428Q426 349 456 303Q492 406 424 447Q463 397 470 372Q481 497 394 511Q444 471 454 443Q432 570 332 600" fill="#527055"/>
+  <path d="M153 595Q74 503 64 395Q132 425 118 479Q92 433 64 395Q37 485 96 506Q62 474 55 459Q49 555 127 557Q87 539 82 518Q100 586 153 607" fill="#72875f"/>
+  <rect x="174" y="65" width="172" height="132" rx="16" fill="url(#cap)"/>
+  <g stroke="#5f6a5c" opacity=".35"><path d="M188 80v102M200 80v102M212 80v102M224 80v102M236 80v102M248 80v102M260 80v102M272 80v102M284 80v102M296 80v102M308 80v102M320 80v102M332 80v102"/></g>
+  <rect x="188" y="188" width="144" height="36" rx="4" fill="#412f1b"/>
+  <path d="M185 214Q147 236 144 277L136 596Q136 639 177 645H344Q382 641 382 600L375 278Q373 239 335 214Z" fill="url(#glass)"/>
+  <path d="M164 294Q167 253 195 245L181 608Q159 612 158 594Z" fill="url(#shine)"/>
+  <rect x="139" y="331" width="240" height="224" rx="3" fill="url(#label)"/>
+  <g fill="#314d3c" text-anchor="middle" font-family="Georgia,serif">
+    <text x="260" y="385" font-size="36" letter-spacing="7">MỘC</text>
+    <path d="M260 409v45M260 439q-30-2-25-27 27 3 25 27M260 427q28-2 25-24-27 2-25 24" fill="none" stroke="#56735a" stroke-width="2"/>
+    <text x="260" y="481" font-size="14" letter-spacing="3">BOTANICAL OIL</text>
+    <text x="260" y="508" font-size="10" letter-spacing="2">A LITTLE MOMENT FOR YOU</text>
+    <text x="260" y="537" font-size="11" letter-spacing="2">30 ml / 1.0 fl oz</text>
+  </g>
+  <path d="M151 621Q259 646 369 620" fill="none" stroke="#e6be6e" stroke-opacity=".22" stroke-width="5"/>
+</svg>
