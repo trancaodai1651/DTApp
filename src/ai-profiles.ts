@@ -108,6 +108,8 @@ declare global {
     dtPosterSecureStore?: {
       loadAIProfiles(): Promise<unknown>;
       saveAIProfiles(profiles: AIProfile[]): Promise<void>;
+      openOAuthURL(url: string): Promise<void>;
+      onOAuthCallback(callback: (url: string) => void): () => void;
     };
   }
 }

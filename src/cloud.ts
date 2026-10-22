@@ -4,7 +4,9 @@ import type { SavedProject } from './storage';
 import { sanitizeSalesChannels, type BioProfile } from './sales-channels';
 
 export interface CloudConfig { url: string; anonKey: string }
-export interface CloudBio extends BioProfile { shareId: string; isPublished: boolean }
+export interface CloudBio extends BioProfile { id: string; slug: string; shareId: string; isPublished: boolean; updatedAt: string }
+export type AppRole = 'admin' | 'editor';
+export interface AppUserRecord { email: string; displayName: string; role: AppRole; isActive: boolean; createdAt: string }
 const CONFIG_KEY = 'dt.supabase';
 // Supabase publishable keys are intended for browser clients. RLS and the
 // private storage policies in the migration protect each user's poster data.
@@ -43,43 +45,101 @@ export function configuredClient(): SupabaseClient | null {
   try { return configureCloud(config, false); } catch { return null; }
 }
 
-export async function ensureCloudUser(client: SupabaseClient): Promise<{ user: User; created: boolean }> {
-  const { data: { session }, error: sessionError } = await client.auth.getSession();
-  if (sessionError) throw sessionError;
-  if (session?.user) return { user: session.user, created: false };
-  const { data, error } = await client.auth.signInAnonymously();
+export async function signInWithGoogle(client: SupabaseClient): Promise<void> {
+  const desktop = Boolean(window.dtPosterSecureStore?.openOAuthURL);
+  let redirectTo = 'dtapp://auth/callback';
+  if (!desktop) {
+    const redirect = new URL(window.location.href);
+    redirect.hash = '';
+    redirect.search = '';
+    const bioPath = redirect.pathname.indexOf('/bio/');
+    if (bioPath >= 0) redirect.pathname = redirect.pathname.slice(0, bioPath + 1);
+    redirectTo = redirect.toString();
+  }
+  const { data: current } = await client.auth.getUser();
+  const options = { redirectTo, skipBrowserRedirect: desktop, queryParams: { prompt: 'select_account' } };
+  const result = current.user?.is_anonymous
+    ? await client.auth.linkIdentity({ provider: 'google', options })
+    : await client.auth.signInWithOAuth({ provider: 'google', options });
+  const { data, error } = result;
   if (error) throw error;
-  if (!data.user) throw new Error('Không tạo được phiên khách Supabase.');
-  return { user: data.user, created: true };
+  if (desktop && data.url) await window.dtPosterSecureStore!.openOAuthURL(data.url);
 }
 
-export async function readCloudBio(client: SupabaseClient, user: User): Promise<CloudBio | null> {
-  const { data, error } = await client.from('bio_pages').select('share_id,name,description,channels,is_published').eq('user_id', user.id).maybeSingle();
+export async function applyDesktopOAuthCallback(client: SupabaseClient, callbackUrl: string): Promise<void> {
+  const parsed = new URL(callbackUrl);
+  if (parsed.protocol !== 'dtapp:' || parsed.hostname !== 'auth' || parsed.pathname !== '/callback') throw new Error('Callback đăng nhập desktop không hợp lệ.');
+  const code = parsed.searchParams.get('code');
+  if (code) {
+    const { error } = await client.auth.exchangeCodeForSession(code);
+    if (error) throw error;
+    return;
+  }
+  const values = new URLSearchParams(parsed.hash.slice(1));
+  const accessToken = values.get('access_token');
+  const refreshToken = values.get('refresh_token');
+  if (!accessToken || !refreshToken) throw new Error(values.get('error_description') || 'Google chưa trả về phiên đăng nhập.');
+  const { error } = await client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+  if (error) throw error;
+}
+
+export async function readAppAccess(client: SupabaseClient, user: User): Promise<AppUserRecord | null> {
+  if (!user.email) return null;
+  const { data, error } = await client.from('app_users').select('email,display_name,role,is_active,created_at').eq('email', user.email.toLowerCase()).maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  return {
-    shareId: data.share_id,
-    name: typeof data.name === 'string' ? data.name.slice(0, 60) : 'Tạp Hoá DT',
-    description: typeof data.description === 'string' ? data.description.slice(0, 240) : '',
-    channels: sanitizeSalesChannels(data.channels),
-    isPublished: data.is_published === true,
-  };
+  return { email: data.email, displayName: data.display_name || '', role: data.role, isActive: data.is_active === true, createdAt: data.created_at };
 }
 
-export async function saveCloudBio(client: SupabaseClient, user: User, bio: BioProfile, previousShareId: string | null, publish: boolean): Promise<CloudBio> {
+export async function readManagedUsers(client: SupabaseClient): Promise<AppUserRecord[]> {
+  const { data, error } = await client.from('app_users').select('email,display_name,role,is_active,created_at').order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data || []).map(row => ({ email: row.email, displayName: row.display_name || '', role: row.role, isActive: row.is_active === true, createdAt: row.created_at }));
+}
+
+export async function addManagedUser(client: SupabaseClient, input: Pick<AppUserRecord, 'email' | 'displayName' | 'role'>): Promise<void> {
+  const { error } = await client.from('app_users').insert({ email: input.email.trim().toLowerCase(), display_name: input.displayName.trim().slice(0, 80), role: input.role, is_active: true });
+  if (error) throw error;
+}
+
+export async function updateManagedUser(client: SupabaseClient, input: Pick<AppUserRecord, 'email' | 'displayName' | 'role' | 'isActive'>): Promise<void> {
+  const { error } = await client.from('app_users').update({ display_name: input.displayName.trim().slice(0, 80), role: input.role, is_active: input.isActive, updated_at: new Date().toISOString() }).eq('email', input.email.toLowerCase());
+  if (error) throw error;
+}
+
+export async function deleteManagedUser(client: SupabaseClient, email: string): Promise<void> {
+  const { error } = await client.from('app_users').delete().eq('email', email.toLowerCase());
+  if (error) throw error;
+}
+
+export async function readCloudBios(client: SupabaseClient, user: User): Promise<CloudBio[]> {
+  const { data, error } = await client.from('bio_pages').select('id,share_id,slug,name,description,channels,is_published,updated_at').eq('user_id', user.id).order('updated_at', { ascending: false });
+  if (error) throw error;
+  return (data || []).map(row => ({
+    id: row.id, shareId: row.share_id, slug: row.slug,
+    name: typeof row.name === 'string' ? row.name.slice(0, 60) : 'Tạp Hoá DT',
+    description: typeof row.description === 'string' ? row.description.slice(0, 240) : '',
+    channels: sanitizeSalesChannels(row.channels), isPublished: row.is_published === true, updatedAt: row.updated_at,
+  }));
+}
+
+export async function saveCloudBio(client: SupabaseClient, user: User, bio: BioProfile, recordId: string | null, previousShareId: string | null, slug: string, publish: boolean): Promise<CloudBio> {
+  const id = recordId && UUID.test(recordId) ? recordId : crypto.randomUUID();
   const shareId = previousShareId && UUID.test(previousShareId) ? previousShareId : crypto.randomUUID();
   const { data, error } = await client.from('bio_pages').upsert({
+    id,
     user_id: user.id,
     share_id: shareId,
+    slug,
     name: bio.name.trim().slice(0, 60) || 'Tạp Hoá DT',
     description: bio.description.trim().slice(0, 240),
     channels: sanitizeSalesChannels(bio.channels),
     is_published: publish,
     updated_at: new Date().toISOString(),
-  }, { onConflict: 'user_id' }).select('share_id,name,description,channels,is_published').single();
+  }, { onConflict: 'id' }).select('id,share_id,slug,name,description,channels,is_published,updated_at').single();
   if (error) throw error;
   return {
-    shareId: data.share_id,
+    id: data.id, shareId: data.share_id, slug: data.slug, updatedAt: data.updated_at,
     name: data.name,
     description: data.description,
     channels: sanitizeSalesChannels(data.channels),
@@ -87,9 +147,28 @@ export async function saveCloudBio(client: SupabaseClient, user: User, bio: BioP
   };
 }
 
+export async function deleteCloudBio(client: SupabaseClient, id: string): Promise<void> {
+  if (!UUID.test(id)) return;
+  const { error } = await client.from('bio_pages').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function readPublicBio(client: SupabaseClient, shareId: string): Promise<BioProfile | null> {
   if (!UUID.test(shareId)) return null;
   const { data, error } = await client.rpc('get_public_bio', { p_share_id: shareId });
+  if (error) throw error;
+  if (!data || typeof data !== 'object') return null;
+  const result = data as Partial<BioProfile>;
+  return {
+    name: typeof result.name === 'string' ? result.name.slice(0, 60) : 'Tạp Hoá DT',
+    description: typeof result.description === 'string' ? result.description.slice(0, 240) : '',
+    channels: sanitizeSalesChannels(result.channels),
+  };
+}
+
+export async function readPublicBioBySlug(client: SupabaseClient, slug: string): Promise<BioProfile | null> {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return null;
+  const { data, error } = await client.rpc('get_public_bio_by_slug', { p_slug: slug });
   if (error) throw error;
   if (!data || typeof data !== 'object') return null;
   const result = data as Partial<BioProfile>;

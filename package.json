@@ -67,6 +67,14 @@
         "dmg",
         "zip"
       ],
+      "protocols": [
+        {
+          "name": "DT App Google Sign-in",
+          "schemes": [
+            "dtapp"
+          ]
+        }
+      ],
       "category": "public.app-category.graphics-design",
       "minimumSystemVersion": "13.0.0"
     }

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DT App</title>
+    <script>
+      (() => {
+        const root = '/DTApp/';
+        const path = window.location.pathname;
+        if (path.startsWith(root + 'bio/')) {
+          const slug = path.slice((root + 'bio/').length).replace(/\/$/, '');
+          if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+            window.location.replace(root + '?__dt_route=' + encodeURIComponent('bio/' + slug));
+            return;
+          }
+        }
+        window.location.replace(root);
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

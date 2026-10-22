@@ -5,12 +5,42 @@ const fs = require('node:fs/promises');
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.png': 'image/png', '.jpg': 'image/jpeg' };
 let window;
+let pendingOAuthUrl = '';
+const singleInstance = app.requestSingleInstanceLock();
+const deliverOAuthCallback = value => {
+  if (!value || !value.startsWith('dtapp://auth/callback')) return;
+  pendingOAuthUrl = value;
+  if (window?.webContents && !window.webContents.isLoading()) {
+    window.webContents.send('dt:oauth-callback', pendingOAuthUrl);
+    pendingOAuthUrl = '';
+  }
+};
+if (!singleInstance) app.quit();
+else {
+  app.on('open-url', (event, url) => { event.preventDefault(); deliverOAuthCallback(url); });
+  app.on('second-instance', (_event, argv) => {
+    const callbackUrl = argv.find(value => typeof value === 'string' && value.startsWith('dtapp://auth/callback'));
+    if (callbackUrl) deliverOAuthCallback(callbackUrl);
+    if (window) { if (window.isMinimized()) window.restore(); window.focus(); }
+  });
+}
 app.whenReady().then(() => {
+  if (!singleInstance) return;
+  app.setAsDefaultProtocolClient('dtapp');
+  const startupOAuthUrl = process.argv.find(value => typeof value === 'string' && value.startsWith('dtapp://auth/callback'));
+  if (startupOAuthUrl) deliverOAuthCallback(startupOAuthUrl);
   const root = path.resolve(__dirname, '../dist');
   const secureProfilesFile = path.join(app.getPath('userData'), 'ai-profiles.enc');
   const assertTrustedRenderer = event => {
     if (!event.senderFrame?.url.startsWith('app://dt/')) throw new Error('Untrusted application window.');
   };
+  ipcMain.handle('dt:open-oauth', async (event, value) => {
+    assertTrustedRenderer(event);
+    let url;
+    try { url = new URL(value); } catch { throw new Error('Invalid sign-in URL.'); }
+    if (url.protocol !== 'https:' || !url.hostname.endsWith('.supabase.co') || url.pathname !== '/auth/v1/authorize') throw new Error('Untrusted sign-in URL.');
+    await shell.openExternal(url.href);
+  });
   ipcMain.handle('dt:load-ai-profiles', async event => {
     assertTrustedRenderer(event);
     if (!safeStorage.isEncryptionAvailable()) throw new Error('Kho mã hóa của hệ điều hành chưa sẵn sàng.');
@@ -49,6 +79,9 @@ app.whenReady().then(() => {
       return { action: 'deny' };
     });
     window.webContents.on('will-navigate', (event, url) => { if (!url.startsWith('app://dt/')) event.preventDefault(); });
+    window.webContents.on('did-finish-load', () => {
+      if (pendingOAuthUrl) { window.webContents.send('dt:oauth-callback', pendingOAuthUrl); pendingOAuthUrl = ''; }
+    });
     window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => callback(false));
     window.loadURL('app://dt/');
   };

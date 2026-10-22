@@ -13,4 +13,12 @@ import '@fontsource/playfair-display/vietnamese-500.css';
 import App from './App';
 import './styles.css';
 
+const params = new URLSearchParams(window.location.search);
+const fallbackRoute = params.get('__dt_route');
+if (fallbackRoute && /^bio\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(fallbackRoute)) {
+  const root = new URL(import.meta.env.BASE_URL, window.location.href);
+  const nextPath = `${root.pathname.replace(/\/?$/, '/')}${fallbackRoute}`;
+  window.history.replaceState(null, '', `${nextPath}${window.location.hash}`);
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);

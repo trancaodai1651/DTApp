@@ -443,3 +443,96 @@ html[data-theme=dark],html[data-theme=dark] body{background:#111a24;color:#e7f0f
 @media(max-width:900px){.channels-heading-actions{justify-content:flex-start}.channel-add-form{grid-template-columns:1fr 2fr auto}}
 @media(max-width:620px){.channels-bio-nav{padding:13px;gap:10px}.channels-bio-nav-icon{width:38px;height:38px}.channels-bio-nav strong{font-size:14px}.channels-bio-nav small{font-size:11px}.channels-heading-actions{width:100%;display:grid;grid-template-columns:1fr}.channels-heading-actions .button{width:100%;justify-content:center}.channel-add-form{grid-template-columns:1fr;align-items:stretch}.channel-add-form .button{justify-content:center}.channel-order-actions{gap:3px}.channel-order-actions .icon-button{width:29px;height:29px}.bio-title-actions{width:100%;display:grid;grid-template-columns:1fr}.bio-title-actions .button{width:100%;justify-content:center}.bio-channel-shortcut{font-size:13px}}
 @media(prefers-reduced-motion:reduce){.channels-bio-nav,.channel-add-form{animation:none!important;transition:none}.channels-bio-nav:hover{transform:none}}
+
+/* Google access, user administration, and multiple bio pages */
+.access-screen{position:relative;min-height:100vh;display:grid;place-items:center;padding:64px 24px 24px;background:radial-gradient(ellipse at 15% 15%,#dcecff 0,transparent 40%),radial-gradient(ellipse at 90% 85%,#f8e8e8 0,transparent 35%),#f4f8fc;color:#23354a}
+.access-tools{position:absolute;top:18px;right:20px;display:flex;align-items:center;gap:8px}
+.access-card{width:min(100%,470px);padding:36px;border:1px solid #d6e3f0;border-radius:24px;background:#fff;box-shadow:0 24px 70px #24476d1c;animation:rise-in .35s both}
+.access-brand{display:flex;align-items:center;gap:10px;margin-bottom:32px;font-size:20px;font-weight:750;letter-spacing:-.03em}
+.access-kicker{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:100px;background:#eaf3ff;color:#5279a4;font-size:10px;font-weight:800;letter-spacing:.11em}
+.access-card h1{margin:16px 0 9px;font-size:clamp(28px,6vw,36px);letter-spacing:-.045em;line-height:1.12}
+.access-card>p{color:#708197;font-size:15px;line-height:1.7}
+.access-google-button{width:100%;justify-content:center;gap:11px;margin-top:16px;padding:14px}
+.access-error{padding:11px 13px;border:1px solid #f0c9c9;border-radius:10px;background:#fff3f3;color:#a94343;font-size:13px;line-height:1.5}
+.access-footnote{display:flex;gap:9px;margin-top:24px;padding-top:18px;border-top:1px solid #e8eef4;color:#8392a3;font-size:12px;line-height:1.6}
+.access-footnote svg{flex:0 0 auto;margin-top:2px}
+.access-loading{display:flex;align-items:center;justify-content:center;gap:13px;color:#6587ab}
+.access-loading p{font-size:14px}
+.access-denied-card{text-align:center}
+.access-icon{display:grid;place-items:center;width:52px;height:52px;margin:0 auto 15px;border-radius:16px}
+.access-icon-denied{background:#fff0ed;color:#bd6150}
+.access-actions{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;margin-top:22px}
+.access-actions .button{justify-content:center}
+.signed-in-email{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#70839a;font-size:12px}
+.users-page,.bio-pages-page{padding:34px clamp(16px,3vw,44px) 48px;animation:rise-in .25s both}
+.users-page>.page-title,.bio-pages-page>.page-title{align-items:flex-end}
+.user-add-form,.users-list-panel{padding:22px;margin-bottom:18px}
+.user-form-heading,.users-list-heading{display:flex;align-items:center;gap:12px;margin-bottom:17px}
+.user-form-heading h2,.users-list-heading h2{margin:0;font-size:17px}
+.user-form-heading p,.users-list-heading p{margin:4px 0 0;color:#8090a2;font-size:12px}
+.user-page-icon,.bio-page-card-icon{display:grid;place-items:center;flex:0 0 auto;width:42px;height:42px;border-radius:13px;background:#e7f1ff;color:#5480b2}
+.user-add-fields{display:grid;grid-template-columns:1.3fr 1.2fr .9fr auto;align-items:end;gap:11px}
+.user-add-fields label,.managed-user-fields label{display:grid;gap:6px;color:#65778c;font-size:11px;font-weight:700}
+.user-add-fields input,.user-add-fields select,.managed-user-fields input,.managed-user-fields select{min-width:0;height:41px}
+.users-list-heading{justify-content:space-between;margin-bottom:9px}
+.users-list-heading h2{display:flex;align-items:center;gap:8px}
+.managed-users{display:grid}
+.managed-user-row{display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:13px;padding:16px 0;border-top:1px solid #e7edf4}
+.managed-user-avatar{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:linear-gradient(145deg,#dcecff,#f2e6e5);color:#567caa;font-weight:750}
+.managed-user-fields{display:grid;grid-template-columns:1.3fr 1.1fr .9fr auto;align-items:end;gap:9px}
+.managed-user-fields input{background:#fbfdff}
+.managed-user-fields input[readonly]{color:#77879a}
+.managed-user-fields .user-active-toggle{display:flex;align-items:center;align-self:center;gap:7px;white-space:nowrap}
+.user-active-toggle input{width:17px;height:17px;accent-color:#578bc4}
+.managed-user-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+.role-pill,.current-user-pill,.bio-status-pill{padding:5px 8px;border:1px solid #d8e6f4;border-radius:100px;background:#f2f7fd;color:#587b9f;font-size:10px;font-weight:700;white-space:nowrap}
+.role-pill.admin{background:#f0ebff;border-color:#e0d7fa;color:#7b68ad}
+.current-user-pill{background:#e8f8f0;border-color:#cdebdc;color:#418466}
+.owner-note{width:100%;text-align:right;color:#8592a0;font-size:10px}
+.compact{min-height:34px;padding:7px 10px;font-size:12px}
+.danger-icon{color:#b76565}
+.danger-icon:hover:not(:disabled){border-color:#e4b8b8;background:#fff1f1}
+.users-empty{padding:25px 12px;text-align:center;color:#8190a0;font-size:13px}
+.users-security-note{display:flex;align-items:flex-start;gap:9px;color:#72849a;font-size:12px;line-height:1.6}
+.users-security-note svg{flex:0 0 auto;color:#6a91b9}
+.bio-pages-page>.page-title>.button{white-space:nowrap}
+.bio-pages-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:15px}
+.bio-page-card{padding:19px;animation:rise-in .25s both}
+.bio-page-card-top{display:flex;align-items:center;justify-content:space-between}
+.bio-page-card h2{margin:14px 0 5px;font-size:18px;letter-spacing:-.025em}
+.bio-page-card>p{min-height:40px;margin:0;color:#8190a0;font-size:13px;line-height:1.5}
+.bio-status-pill.published{background:#e9f8f0;border-color:#c8ead7;color:#478469}
+.bio-page-url{display:grid;gap:6px;margin:14px 0;padding:12px;border:1px solid #e0e9f3;border-radius:10px;background:#f7faff}
+.bio-page-url small{color:#8596a8;font-size:9px;font-weight:800;letter-spacing:.1em}
+.bio-page-url code{overflow-wrap:anywhere;color:#476e99;font-size:11px}
+.bio-page-url span{color:#8a99a9;font-size:10px}
+.bio-page-card-actions{display:flex;align-items:center;gap:7px}
+.bio-page-card-actions .button{min-height:36px;padding:8px 10px;font-size:12px}
+.bio-page-card-actions .danger-icon{margin-left:auto}
+.bio-pages-empty{display:grid;justify-items:center;padding:55px 22px;text-align:center}
+.bio-pages-empty h2{margin:14px 0 3px}
+.bio-pages-empty p{max-width:420px;margin:0 0 18px;color:#8090a2;font-size:13px;line-height:1.6}
+.bio-slug-input{display:flex;align-items:center;overflow:hidden;border:1px solid #d6e2ee;border-radius:9px;background:#f8fbff}
+.bio-slug-input>span{padding-left:11px;color:#8093a7;font-size:11px;white-space:nowrap}
+.bio-slug-input input{min-width:80px;border:0;background:transparent;box-shadow:none}
+.bio-slug-input input:focus{outline:0;box-shadow:none}
+.bio-slug-input:focus-within{border-color:#78a8d8;box-shadow:0 0 0 3px #77a9d822}
+.slug-help{display:block;margin-top:-7px;margin-bottom:12px;color:#7c90a5;font-size:10px}
+.slug-help.invalid{color:#bd6150}
+.app-shell[data-theme=dark] .access-screen{background:radial-gradient(ellipse at 15% 15%,#243b55 0,transparent 40%),radial-gradient(ellipse at 90% 85%,#49373c 0,transparent 35%),#101b27;color:#e3edf7}
+.app-shell[data-theme=dark] .access-card,.access-screen:has(.access-card){color:#23354a}
+.app-shell[data-theme=dark] .user-add-form,.app-shell[data-theme=dark] .users-list-panel,.app-shell[data-theme=dark] .bio-page-card,.app-shell[data-theme=dark] .bio-pages-empty{background:#1b2a39;border-color:#34495e}
+.app-shell[data-theme=dark] .managed-user-row{border-color:#35495c}
+.app-shell[data-theme=dark] .managed-user-fields input,.app-shell[data-theme=dark] .bio-page-url{background:#182635;border-color:#3a5064;color:#deebf8}
+.app-shell[data-theme=dark] .bio-page-url code{color:#b8d3f1}
+.app-shell[data-theme=dark] .user-form-heading p,.app-shell[data-theme=dark] .users-list-heading p,.app-shell[data-theme=dark] .bio-page-card>p,.app-shell[data-theme=dark] .users-empty,.app-shell[data-theme=dark] .users-security-note{color:#a5b5c5}
+.app-shell[data-theme=dark] .signed-in-email{color:#b0c1d3}
+.access-screen[data-theme=dark]{background:radial-gradient(ellipse at 15% 15%,#243b55 0,transparent 40%),radial-gradient(ellipse at 90% 85%,#49373c 0,transparent 35%),#101b27;color:#e3edf7}
+.access-screen[data-theme=dark] .access-card{background:#1b2a39;border-color:#34495e;color:#e3edf7}
+.access-screen[data-theme=dark] .access-card>p{color:#adbdcd}
+.access-screen[data-theme=dark] .access-footnote{border-color:#35495c;color:#a8b8c8}
+.access-screen[data-theme=dark] .access-kicker{background:#253d55;color:#b8d4f1}
+.access-screen[data-theme=dark] .access-tools .icon-button{border-color:#45586b;background:#203244;color:#dae8f6}
+@media(max-width:950px){.user-add-fields{grid-template-columns:1fr 1fr}.user-add-fields .button{justify-self:start}.managed-user-row{grid-template-columns:38px minmax(0,1fr)}.managed-user-fields{grid-template-columns:1fr 1fr}.managed-user-actions{grid-column:2;justify-content:flex-start}.owner-note{width:auto}}
+@media(max-width:620px){.access-card{padding:25px 20px;border-radius:18px}.access-brand{margin-bottom:24px}.access-actions{display:grid}.access-actions .button{width:100%}.users-page,.bio-pages-page{padding:22px 14px 34px}.users-page>.page-title,.bio-pages-page>.page-title{align-items:flex-start;flex-direction:column}.bio-pages-page>.page-title>.button{width:100%;justify-content:center}.user-add-form,.users-list-panel{padding:16px}.user-add-fields,.managed-user-fields{grid-template-columns:1fr}.managed-user-row{grid-template-columns:34px minmax(0,1fr);gap:9px}.managed-user-actions{grid-column:1 / -1}.signed-in-email{display:none}.bio-page-card-actions{flex-wrap:wrap}.bio-page-card-actions .button{flex:1;justify-content:center}}
+@media(prefers-reduced-motion:reduce){.access-card,.users-page,.bio-pages-page,.bio-page-card{animation:none!important}}

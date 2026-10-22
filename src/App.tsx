@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Copy, FolderHeart, Home, ImagePlus, Layers3, LayoutGrid, Leaf, Link2, LoaderCircle, Menu, Minus, Moon, MousePointer2, Palette, Plus, Redo2, RotateCcw, Save, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Store, Sun, Trash2, Undo2, Upload, WandSparkles, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Copy, FolderHeart, Home, ImagePlus, Layers3, LayoutGrid, Leaf, Link2, LoaderCircle, LogOut, Menu, Minus, Moon, MousePointer2, Palette, Plus, Redo2, RotateCcw, Save, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Store, Sun, Trash2, Undo2, Upload, Users, WandSparkles, X } from 'lucide-react';
 import { initialPoster, styles, ratios, categories, type Poster, type StyleId, type RatioId } from './model';
 import { renderPoster, exportPoster, downloadBlob } from './renderer';
 import { readProduct, visionImage, backgroundImage } from './image-tools';
@@ -8,11 +8,13 @@ import { saveProject, getProjects, deleteProject, type SavedProject } from './st
 import { apiRequest, connectionUrl, type Connection } from './api';
 import { loadAIProfiles, saveAIProfiles, type AIProfile, type AIProviderId } from './ai-profiles';
 import { translate, type Language } from './i18n';
-import { configureCloud, configuredClient, deleteCloudProject, ensureCloudUser, readCloudBio, readCloudConfig, readCloudProjects, readPublicBio, saveCloudBio, uploadCloudProject, type CloudConfig } from './cloud';
+import { applyDesktopOAuthCallback, configuredClient, deleteCloudBio, deleteCloudProject, readAppAccess, readCloudBios, readCloudProjects, readPublicBio, readPublicBioBySlug, saveCloudBio, signInWithGoogle, uploadCloudProject, type AppUserRecord, type CloudBio } from './cloud';
 import type { User } from '@supabase/supabase-js';
-import { BioBuilderPage, BioLinks, channelHref, createDefaultChannels, defaultDestinations, readSharedBio as readLegacySharedBio, readBioShareId, sanitizeSalesChannels, SalesChannelsPage, type BioProfile, type SalesChannel } from './sales-channels';
+import { AccessDeniedPage, GoogleLoginPage, UsersPage } from './access';
+import { appBaseUrl, BioBuilderPage, BioLinks, BioPagesPage, channelHref, createDefaultChannels, defaultDestinations, readSharedBio as readLegacySharedBio, readBioShareId, readBioSlug, sanitizeSalesChannels, SalesChannelsPage, type BioProfile, type SalesChannel } from './sales-channels';
+import { isValidBioSlug, normalizeBioSlug } from './bio-slug.mjs';
 
-type Page = 'dashboard' | 'editor' | 'projects' | 'brand' | 'channels' | 'bio';
+type Page = 'dashboard' | 'editor' | 'projects' | 'brand' | 'channels' | 'bios' | 'bio' | 'users';
 type Modal = 'export' | 'settings' | 'help' | null;
 interface Suggestions { names: string[]; descriptions: string[]; source: string }
 const safeRead = (key: string, fallback = '') => { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } };
@@ -24,10 +26,8 @@ function readLocalSalesChannels(): SalesChannel[] {
     return createDefaultChannels(JSON.parse(safeRead('dt.channelUrls', '{}')));
   } catch { return createDefaultChannels(); }
 }
-function makeBioShareUrl(shareId: string): string {
-  const base = window.location.protocol === 'file:' ? 'https://trancaodai1651.github.io/DTApp/' : import.meta.env.BASE_URL;
-  const url = new URL(base, window.location.href); url.hash = `bio=${shareId}`;
-  return url.toString();
+function makeBioShareUrl(slug: string): string {
+  return new URL(`bio/${encodeURIComponent(slug)}`, appBaseUrl()).toString();
 }
 const aiProviders: Record<AIProviderId, { label: string; key: string; modelEnv: string; model: string; url: string }> = {
   openai: { label: 'ChatGPT / OpenAI', key: 'OPENAI_API_KEY', modelEnv: 'OPENAI_MODEL', model: 'gpt-4.1-mini', url: 'https://platform.openai.com/api-keys' },
@@ -84,7 +84,7 @@ function ModalBox({ title, children, close, wide = false }: { title: string; chi
 export default function App() {
   const [language, setLanguage] = useState<Language>(() => safeRead('dt.language', 'vi') === 'en' ? 'en' : 'vi');
   const [appearance, setAppearance] = useState<'light' | 'dark'>(() => safeRead('dt.theme', window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') === 'dark' ? 'dark' : 'light');
-  const t = (text: string) => translate(language, text);
+  const t = useCallback((text: string) => translate(language, text), [language]);
   const [timeline, setTimeline] = useState<{ history: Poster[]; cursor: number }>({ history: [{ ...initialPoster, brand: safeRead('dt.brand', initialPoster.brand) }], cursor: 0 });
   const { history, cursor } = timeline;
   const setHistory = (next: Poster[]) => setTimeline(t => ({ ...t, history: next }));
@@ -92,15 +92,19 @@ export default function App() {
   const poster = history[cursor];
   const [sharedBio, setSharedBio] = useState<BioProfile | null>(() => readLegacySharedBio());
   const [sharedBioId, setSharedBioId] = useState<string | null>(() => readBioShareId());
+  const [sharedBioSlug, setSharedBioSlug] = useState<string | null>(() => readBioSlug());
   const [sharedBioLoading, setSharedBioLoading] = useState(false);
   const [sharedBioError, setSharedBioError] = useState('');
-  const [page, setPage] = useState<Page>(() => readBioShareId() || readLegacySharedBio() ? 'bio' : 'dashboard');
+  const [page, setPage] = useState<Page>(() => readBioShareId() || readBioSlug() || readLegacySharedBio() ? 'bio' : 'dashboard');
   const [channels, setChannels] = useState<SalesChannel[]>(readLocalSalesChannels);
   const [bioName, setBioName] = useState(() => safeRead('dt.bioName', safeRead('dt.brand', 'Tạp Hoá DT') || 'Tạp Hoá DT'));
   const [bioDescription, setBioDescription] = useState(() => safeRead('dt.bioDescription', safeRead('dt.language', 'vi') === 'en' ? 'Your favorite shop, selected products, and fresh offers every day.' : 'Gian hàng yêu thích, sản phẩm được chọn và ưu đãi mới mỗi ngày.'));
   const [bioShareId, setBioShareId] = useState(() => safeRead('dt.bioShareId'));
+  const [bioRecordId, setBioRecordId] = useState<string | null>(null);
+  const [bioSlug, setBioSlug] = useState(() => normalizeBioSlug(safeRead('dt.bioName', 'tap-hoa-dt')) || 'tap-hoa-dt');
   const [bioIsPublished, setBioIsPublished] = useState(() => safeRead('dt.bioIsPublished') === '1');
-  const [bioShareUrl, setBioShareUrl] = useState(() => safeRead('dt.bioIsPublished') === '1' && safeRead('dt.bioShareId') ? makeBioShareUrl(safeRead('dt.bioShareId')) : '');
+  const [bioShareUrl, setBioShareUrl] = useState('');
+  const [bioPages, setBioPages] = useState<CloudBio[]>([]);
   const [modal, setModal] = useState<Modal>(null);
   const closeModal = useCallback(() => setModal(null), []);
   const [mobileNav, setMobileNav] = useState(false);
@@ -127,12 +131,12 @@ export default function App() {
   const [aiProfileName, setAiProfileName] = useState('');
   const [aiProfileKey, setAiProfileKey] = useState('');
   const [aiProfileModel, setAiProfileModel] = useState(() => aiProviders.openai.model);
-  const [cloudForm, setCloudForm] = useState<CloudConfig>(() => readCloudConfig());
   const [cloudClient, setCloudClient] = useState(() => configuredClient());
   const [cloudUser, setCloudUser] = useState<User | null>(null);
   const [bioCloudReady, setBioCloudReady] = useState(false);
-  const [cloudEmail, setCloudEmail] = useState('');
-  const [cloudPassword, setCloudPassword] = useState('');
+  const [appAccess, setAppAccess] = useState<AppUserRecord | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState('');
   const [exportFormat, setExportFormat] = useState<'png' | 'jpeg'>('png');
   const [exportScale, setExportScale] = useState(1);
   const [brandName, setBrandName] = useState(safeRead('dt.brand', poster.brand));
@@ -150,20 +154,21 @@ export default function App() {
   const theme = styles.find(s => s.id === poster.style)!;
   const activeAIProfile = aiProfiles.find(profile => profile.id === activeAIProfileId) || null;
   const dirty = savedPoster !== poster;
-  const isPublicBio = Boolean(sharedBioId || sharedBio);
+  const isPublicBio = Boolean(sharedBioId || sharedBioSlug || sharedBio);
 
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(null), 5000); return () => clearTimeout(timeout); }, [toast]);
   useEffect(() => { document.documentElement.lang = language; try { localStorage.setItem('dt.language', language); } catch {} }, [language]);
   useEffect(() => { document.documentElement.dataset.theme = appearance; try { localStorage.setItem('dt.theme', appearance); } catch {} }, [appearance]);
   useEffect(() => {
     const onHashChange = () => {
-      const shareId = readBioShareId(); const legacy = shareId ? null : readLegacySharedBio();
-      setSharedBioId(shareId); setSharedBio(legacy); setSharedBioError('');
-      if (shareId || legacy) { setPage('bio'); setMobileNav(false); }
+      const shareId = readBioShareId(); const slug = shareId ? null : readBioSlug(); const legacy = shareId || slug ? null : readLegacySharedBio();
+      setSharedBioId(shareId); setSharedBioSlug(slug); setSharedBio(legacy); setSharedBioError('');
+      if (shareId || slug || legacy) { setPage('bio'); setMobileNav(false); }
       else setPage(current => current === 'bio' ? 'dashboard' : current);
     };
     window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
+    window.addEventListener('popstate', onHashChange);
+    return () => { window.removeEventListener('hashchange', onHashChange); window.removeEventListener('popstate', onHashChange); };
   }, []);
   useEffect(() => { try { localStorage.setItem('dt.bioName', bioName); } catch {} }, [bioName]);
   useEffect(() => { try { localStorage.setItem('dt.bioDescription', bioDescription); } catch {} }, [bioDescription]);
@@ -176,10 +181,11 @@ export default function App() {
   }, [channels]);
   useEffect(() => { try { localStorage.setItem('dt.bioShareId', bioShareId); localStorage.setItem('dt.bioIsPublished', bioIsPublished ? '1' : '0'); } catch {} }, [bioShareId, bioIsPublished]);
   useEffect(() => {
-    const pageName = sharedBio ? `${sharedBio.name} · ${t('Trang bio')}` : sharedBioId ? t('Trang bio') : page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Tạo trang bio') : t('Kênh bán hàng');
-    document.title = sharedBio || sharedBioId ? pageName : `${t('DT App')} · ${pageName}`;
-  }, [page, language, sharedBio, sharedBioId]);
+    const pageName = !isPublicBio && (!cloudUser || !appAccess?.isActive) ? t('Đăng nhập') : sharedBio ? `${sharedBio.name} · ${t('Trang bio')}` : sharedBioId || sharedBioSlug ? t('Trang bio') : page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Chỉnh sửa bio') : page === 'bios' ? t('Các trang bio') : page === 'users' ? t('Quản lý người dùng') : t('Kênh bán hàng');
+    document.title = sharedBio || sharedBioId || sharedBioSlug ? pageName : `${t('DT App')} · ${pageName}`;
+  }, [page, language, sharedBio, sharedBioId, sharedBioSlug, isPublicBio, cloudUser, appAccess?.isActive]);
   useEffect(() => {
+    if (isPublicBio || !appAccess?.isActive) return;
     let mounted = true;
     loadAIProfiles().then(profiles => {
       if (!mounted) return;
@@ -193,45 +199,71 @@ export default function App() {
       setAiProfilesReady(true);
     }).catch(error => { if (mounted) { setAiVaultError(errorMessage(error)); setAiProfilesReady(true); } });
     return () => { mounted = false; };
-  }, []);
+  }, [appAccess?.isActive, isPublicBio]);
   useEffect(() => {
-    if (!cloudClient) { setCloudUser(null); return; }
+    if (!cloudClient) { setCloudUser(null); setAuthLoading(false); return; }
     let mounted = true;
-    cloudClient.auth.getSession().then(({ data }) => { if (mounted) setCloudUser(data.session?.user || null); });
-    const { data: listener } = cloudClient.auth.onAuthStateChange((_event, session) => { if (mounted) setCloudUser(session?.user || null); });
+    cloudClient.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return;
+      if (error) setAuthError(errorMessage(error));
+      setCloudUser(data.session?.user || null);
+      if (!data.session?.user) setAuthLoading(false);
+    });
+    const { data: listener } = cloudClient.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      setCloudUser(session?.user || null); setAppAccess(null); setAuthError('');
+      setAuthLoading(Boolean(session?.user));
+      if (!session?.user) { setAuthLoading(false); setBioPages([]); setBioCloudReady(false); }
+    });
     return () => { mounted = false; listener.subscription.unsubscribe(); };
   }, [cloudClient]);
   useEffect(() => {
-    if (!cloudClient || !cloudUser) { setBioCloudReady(false); return; }
+    if (!cloudClient || !cloudUser) { setAppAccess(null); setAuthLoading(false); return; }
     let mounted = true;
-    setBioCloudReady(false);
-    readCloudBio(cloudClient, cloudUser).then(remote => {
+    setAuthLoading(true); setAppAccess(null);
+    readAppAccess(cloudClient, cloudUser).then(access => {
       if (!mounted) return;
-      if (remote) {
-        setBioName(remote.name); setBioDescription(remote.description); setChannels(remote.channels);
-        setBioShareId(remote.shareId); setBioIsPublished(remote.isPublished);
-        setBioShareUrl(remote.isPublished ? makeBioShareUrl(remote.shareId) : '');
-      } else {
-        setBioShareId(''); setBioIsPublished(false); setBioShareUrl('');
-      }
-    }).then(() => { if (mounted) setBioCloudReady(true); }).catch(error => { if (mounted) notify(`${t('Không tải được dữ liệu Supabase:')} ${errorMessage(error)}`, true); });
+      setAppAccess(access);
+      if (!access?.isActive) setAuthError('');
+    }).catch(error => { if (mounted) setAuthError(errorMessage(error)); })
+      .finally(() => { if (mounted) setAuthLoading(false); });
     return () => { mounted = false; };
   }, [cloudClient, cloudUser]);
   useEffect(() => {
-    if (!sharedBioId) { setSharedBioLoading(false); return; }
+    if (!cloudClient || !cloudUser || !appAccess?.isActive) { setBioCloudReady(false); return; }
+    let mounted = true;
+    setBioCloudReady(false);
+    readCloudBios(cloudClient, cloudUser).then(remote => {
+      if (!mounted) return;
+      setBioPages(remote);
+      setBioCloudReady(true);
+    }).catch(error => { if (mounted) { setBioCloudReady(true); notify(`${t('Không tải được dữ liệu Supabase:')} ${errorMessage(error)}`, true); } });
+    return () => { mounted = false; };
+  }, [cloudClient, cloudUser, appAccess?.isActive]);
+  useEffect(() => {
+    const unsubscribe = window.dtPosterSecureStore?.onOAuthCallback(callbackUrl => {
+      if (!cloudClient) return;
+      void applyDesktopOAuthCallback(cloudClient, callbackUrl).catch(error => setAuthError(errorMessage(error)));
+    });
+    return () => unsubscribe?.();
+  }, [cloudClient]);
+  useEffect(() => {
+    if (!sharedBioId && !sharedBioSlug) { setSharedBioLoading(false); return; }
     if (!cloudClient) { setSharedBioLoading(false); setSharedBioError(t('Chưa kết nối được Supabase để mở trang bio.')); return; }
     let mounted = true;
     setSharedBio(null); setSharedBioLoading(true); setSharedBioError('');
-    readPublicBio(cloudClient, sharedBioId).then(result => {
+    const request = sharedBioId ? readPublicBio(cloudClient, sharedBioId) : readPublicBioBySlug(cloudClient, sharedBioSlug!);
+    request.then(result => {
       if (!mounted) return;
       if (result) setSharedBio(result); else setSharedBioError(t('Không tìm thấy trang bio này hoặc trang chưa được xuất bản.'));
     }).catch(error => { if (mounted) setSharedBioError(`${t('Không tải được trang bio:')} ${errorMessage(error)}`); })
       .finally(() => { if (mounted) setSharedBioLoading(false); });
     return () => { mounted = false; };
-  }, [sharedBioId, cloudClient, language]);
+  }, [sharedBioId, sharedBioSlug, cloudClient, language]);
   useEffect(() => {
+    if (isPublicBio || !appAccess?.isActive) return;
     getProjects().then(list => { setProjects(list.filter(p => p.id !== '__draft__')); setDraft(list.find(p => p.id === '__draft__') || null); }).catch(e => notify(errorMessage(e), true));
-  }, [notify]);
+  }, [notify, appAccess?.isActive, isPublicBio]);
   useEffect(() => {
     const controller = new AbortController();
     apiRequest<{ status: string }>(connection, 'health', undefined, controller.signal).then(() => setServerStatus('online')).catch(() => { if (!controller.signal.aborted) setServerStatus('offline'); });
@@ -404,10 +436,6 @@ export default function App() {
     try { await navigator.clipboard.writeText(snippet); notify(t('Đã sao chép cấu hình mẫu. Hãy dán vào .env trên máy chủ.')); }
     catch { notify(t('Trình duyệt không cho phép sao chép. Hãy thêm các dòng hiển thị trong tài liệu AI_SETUP.md vào .env.'), true); }
   }
-  function connectCloud() {
-    try { const client = configureCloud(cloudForm); setCloudClient(client); notify(t('Đã lưu cấu hình Supabase. Bạn có thể lưu bio ngay.')); }
-    catch (error) { notify(errorMessage(error), true); }
-  }
   async function refreshCloudProjects(user = cloudUser) {
     if (!cloudClient || !user) return;
     setBusy(t('Đang tải thiết kế từ Supabase…'));
@@ -419,59 +447,81 @@ export default function App() {
     } catch (error) { notify(`${t('Không tải được dữ liệu Supabase:')} ${errorMessage(error)}`, true); }
     finally { setBusy(''); }
   }
-  async function signInCloud() {
-    if (!cloudClient) { connectCloud(); notify(t('Hãy kết nối Supabase trước.')); return; }
-    setBusy(t('Đang đăng nhập Supabase…'));
-    try {
-      const { data, error } = await cloudClient.auth.signInWithPassword({ email: cloudEmail.trim(), password: cloudPassword });
-      if (error) throw error;
-      setCloudPassword(''); if (data.user) await refreshCloudProjects(data.user); notify(t('Đã đăng nhập và đồng bộ Supabase.'));
-    } catch (error) { notify(`${t('Không đăng nhập được:')} ${errorMessage(error)}`, true); }
+  async function startGoogleLogin() {
+    if (!cloudClient) { setAuthError(t('Không thể kết nối Supabase. Hãy kiểm tra cấu hình triển khai.')); return; }
+    setAuthError(''); setBusy(t('Đang mở đăng nhập Google…'));
+    try { await signInWithGoogle(cloudClient); }
+    catch (error) {
+      const message = errorMessage(error);
+      setAuthError(/manual.*link|identity.*link/i.test(message) ? t('Bật Manual identity linking trong cài đặt Authentication của Supabase để chuyển phiên khách cũ sang Google.')
+        : /provider.*not enabled|unsupported provider/i.test(message) ? t('Google chưa được bật trong Supabase Authentication. Hãy cấu hình Google OAuth rồi thử lại.')
+          : message);
+    }
     finally { setBusy(''); }
   }
-  async function signUpCloud() {
-    if (!cloudClient) { connectCloud(); notify(t('Hãy kết nối Supabase trước.')); return; }
-    setBusy(t('Đang tạo tài khoản Supabase…'));
-    try {
-      const { data, error } = await cloudClient.auth.signUp({ email: cloudEmail.trim(), password: cloudPassword });
-      if (error) throw error;
-      setCloudPassword('');
-      if (data.user && data.session) await refreshCloudProjects(data.user);
-      else notify(t('Kiểm tra email để xác nhận tài khoản Supabase.'));
-    } catch (error) { notify(`${t('Không tạo được tài khoản:')} ${errorMessage(error)}`, true); }
-    finally { setBusy(''); }
+  async function recheckAccess() {
+    if (!cloudClient || !cloudUser) return;
+    setAuthLoading(true); setAuthError('');
+    try { setAppAccess(await readAppAccess(cloudClient, cloudUser)); }
+    catch (error) { setAuthError(errorMessage(error)); }
+    finally { setAuthLoading(false); }
   }
   async function signOutCloud() {
     if (!cloudClient) return;
     const { error } = await cloudClient.auth.signOut();
     if (error) notify(errorMessage(error), true);
-    else { setProjects((await getProjects()).filter(project => project.id !== '__draft__')); notify(t('Đã đăng xuất Supabase.')); }
+    else { setAppAccess(null); setBioPages([]); setBioRecordId(null); setProjects([]); notify(t('Đã đăng xuất Supabase.')); }
   }
   const switchPage = (next: Page) => { setPage(next); setMobileNav(false); };
+  const startNewBio = () => {
+    const name = safeRead('dt.brand', 'Tạp Hoá DT') || 'Tạp Hoá DT';
+    const baseSlug = normalizeBioSlug(name).slice(0, 42) || 'tap-hoa-dt';
+    let nextSlug = baseSlug; let suffix = 2;
+    while (bioPages.some(item => item.slug === nextSlug)) { nextSlug = `${baseSlug}-${suffix++}`; }
+    setBioRecordId(null); setBioShareId(''); setBioSlug(nextSlug);
+    setBioName(name); setBioDescription(''); setChannels(createDefaultChannels()); setBioIsPublished(false); setBioShareUrl('');
+    switchPage('bio');
+  };
+  const editBio = (id: string) => {
+    const selected = bioPages.find(item => item.id === id);
+    if (!selected) return;
+    setBioRecordId(selected.id); setBioShareId(selected.shareId); setBioSlug(selected.slug);
+    setBioName(selected.name); setBioDescription(selected.description); setChannels(selected.channels);
+    setBioIsPublished(selected.isPublished); setBioShareUrl(selected.isPublished ? makeBioShareUrl(selected.slug) : '');
+    switchPage('bio');
+  };
+  const removeBio = async (id: string) => {
+    const selected = bioPages.find(item => item.id === id);
+    if (!selected || !cloudClient || !window.confirm(`${t('Xoá trang bio')} “${selected.name}”?`)) return;
+    setBusy(t('Đang xoá trang bio…'));
+    try {
+      await deleteCloudBio(cloudClient, id);
+      setBioPages(items => items.filter(item => item.id !== id));
+      if (bioRecordId === id) { setBioRecordId(null); setBioShareUrl(''); setPage('bios'); }
+      notify(t('Đã xoá trang bio.'));
+    } catch (error) { notify(errorMessage(error), true); }
+    finally { setBusy(''); }
+  };
   const saveBio = async (publish = false) => {
-    if (!cloudClient) { setModal('settings'); notify(t('Hãy kết nối Supabase trước khi lưu.')); return; }
+    if (!cloudClient || !cloudUser || !appAccess?.isActive) { notify(t('Hãy đăng nhập bằng Google để lưu trang bio.'), true); return; }
+    const slug = normalizeBioSlug(bioSlug);
+    if (!isValidBioSlug(slug)) { notify(t('Đường dẫn này chưa hợp lệ hoặc đã dành riêng.'), true); return; }
     const invalid = channels.find(channel => channel.destination && !channelHref(channel));
     if (invalid) { notify(`${t('Kiểm tra đường dẫn hoặc số điện thoại của kênh:')} ${invalid.name}`, true); return; }
-    if (cloudUser && !bioCloudReady) { notify(t('Đang đồng bộ trang bio từ Supabase, hãy thử lại sau giây lát.')); return; }
+    if (!bioCloudReady) { notify(t('Đang đồng bộ trang bio từ Supabase, hãy thử lại sau giây lát.')); return; }
     setBusy(t('Đang lưu trang bio lên Supabase…'));
     try {
-      const { user, created } = await ensureCloudUser(cloudClient);
-      if (!cloudUser) setCloudUser(user);
-      if (!created && !bioCloudReady) {
-        notify(t('Đang tải dữ liệu bio từ Supabase. Hãy lưu lại sau giây lát.'));
-        return;
-      }
-      const saved = await saveCloudBio(cloudClient, user, { name: bioName, description: bioDescription, channels }, created ? null : bioShareId || null, publish || (!created && bioIsPublished));
+      const shouldPublish = publish || (!!bioRecordId && bioIsPublished);
+      const saved = await saveCloudBio(cloudClient, cloudUser, { name: bioName, description: bioDescription, channels }, bioRecordId, bioShareId || null, slug, shouldPublish);
       setBioName(saved.name); setBioDescription(saved.description); setChannels(saved.channels);
-      setBioShareId(saved.shareId); setBioIsPublished(saved.isPublished);
+      setBioRecordId(saved.id); setBioShareId(saved.shareId); setBioSlug(saved.slug); setBioIsPublished(saved.isPublished);
       setBioCloudReady(true);
-      setBioShareUrl(saved.isPublished ? makeBioShareUrl(saved.shareId) : '');
+      setBioShareUrl(saved.isPublished ? makeBioShareUrl(saved.slug) : '');
+      setBioPages(items => [saved, ...items.filter(item => item.id !== saved.id)]);
       notify(saved.isPublished ? t('Đã lưu và cập nhật trang bio trên Supabase.') : t('Đã lưu các kênh vào Supabase.'));
     } catch (error) {
       const message = errorMessage(error);
-      notify(/anonymous.*disabled|disabled.*anonymous/i.test(message)
-        ? t('Supabase chưa bật đăng nhập khách. Hãy bật Anonymous sign-ins trong Authentication → Sign In / Providers.')
-        : `${t('Không lưu được trang bio:')} ${message}`, true);
+      notify(`${t('Không lưu được trang bio:')} ${message}`, true);
     }
     finally { setBusy(''); }
   };
@@ -480,6 +530,11 @@ export default function App() {
     try { await navigator.clipboard.writeText(bioShareUrl); notify(t('Đã sao chép liên kết trang bio.')); }
     catch { notify(t('Hãy chọn và sao chép liên kết trong ô bên dưới.')); }
   };
+  if (!isPublicBio) {
+    if (authLoading) return <main className="access-screen"><section className="access-card access-loading"><LoaderCircle className="spin" size={28} /><p>{t('Đang xác minh tài khoản Google…')}</p></section></main>;
+    if (!cloudUser || cloudUser.is_anonymous) return <GoogleLoginPage loading={!!busy} error={authError} onGoogle={() => { void startGoogleLogin(); }} language={language} appearance={appearance} onToggleLanguage={() => setLanguage(value => value === 'vi' ? 'en' : 'vi')} onToggleTheme={() => setAppearance(value => value === 'light' ? 'dark' : 'light')} t={t} />;
+    if (!appAccess?.isActive) return <AccessDeniedPage email={cloudUser.email || ''} error={authError} loading={authLoading} onRetry={() => { void recheckAccess(); }} onSignOut={() => { void signOutCloud(); }} language={language} appearance={appearance} onToggleLanguage={() => setLanguage(value => value === 'vi' ? 'en' : 'vi')} onToggleTheme={() => setAppearance(value => value === 'light' ? 'dark' : 'light')} t={t} />;
+  }
   return <div className={`app-shell ${isPublicBio ? 'bio-public-shell' : ''}`} data-theme={isPublicBio ? 'light' : appearance}>
     {!isPublicBio && <aside className={`sidebar ${mobileNav ? 'mobile-open' : ''}`}>
       <a className="logo" href="#dashboard" onClick={e => { e.preventDefault(); switchPage('dashboard'); }}><span className="logo-mark">D<span /></span><span>DT App<span className="logo-studio">{t('CÔNG CỤ SÁNG TẠO')}</span></span></a>
@@ -490,15 +545,16 @@ export default function App() {
         <button className={page === 'editor' ? 'active' : ''} onClick={() => switchPage('editor')}><LayoutGrid size={18} /> {t("Xưởng thiết kế")} <span className="nav-dot" /></button>
         <button className={page === 'projects' ? 'active' : ''} onClick={() => switchPage('projects')}><FolderHeart size={18} /> {t('Thiết kế đã lưu')} {projects.length > 0 && <span className="count">{projects.length}</span>}</button>
         <button className={page === 'brand' ? 'active' : ''} onClick={() => switchPage('brand')}><Palette size={18} /> {t("Bộ thương hiệu")}</button>
-        <button className={page === 'channels' ? 'active' : ''} onClick={() => switchPage('channels')}><Store size={18} /> {t('Kênh bán hàng')}</button>
-        <button className={page === 'bio' ? 'active' : ''} onClick={() => switchPage('bio')}><Link2 size={18} /> {t('Trang bio')}</button>
+        <button className={page === 'channels' ? 'active' : ''} onClick={() => bioRecordId ? switchPage('channels') : switchPage('bios')}><Store size={18} /> {t('Kênh bán hàng')}</button>
+        <button className={page === 'bios' || page === 'bio' ? 'active' : ''} onClick={() => switchPage('bios')}><Link2 size={18} /> {t('Trang bio')} {bioPages.length > 0 && <span className="count">{bioPages.length}</span>}</button>
+        {appAccess?.role === 'admin' && <button className={page === 'users' ? 'active' : ''} onClick={() => switchPage('users')}><Users size={18} /> {t('Người dùng')}</button>}
       </nav>
       <div className="sidebar-note"><span className="note-icon"><Sparkles size={20} /></span><h3>{t("Ý tưởng nhỏ.")}<br />{t("Ấn tượng lớn.")}</h3><p>{t("Mỗi sản phẩm đều xứng đáng có một diện mạo riêng.")}</p><button onClick={() => setModal('help')}>{t("Khám phá cách dùng")} <ArrowUpRight size={14} /></button><span className="note-decoration">✳</span></div>
-      <div className="sidebar-bottom"><button onClick={() => { setServerForm(connection); setModal('settings'); }}><Settings2 size={17} /> {t("Cài đặt kết nối")}</button><button onClick={() => setModal('help')}><CircleHelp size={17} /> {t("Hướng dẫn sử dụng")}</button><div className="profile"><span>DT</span><div>{t("Không gian cá nhân")}<small>{t("Lưu trên thiết bị")}</small></div></div></div>
+      <div className="sidebar-bottom"><button onClick={() => { setServerForm(connection); setModal('settings'); }}><Settings2 size={17} /> {t("Cài đặt kết nối")}</button><button onClick={() => setModal('help')}><CircleHelp size={17} /> {t("Hướng dẫn sử dụng")}</button><div className="profile"><span>{(cloudUser?.email || 'DT').slice(0, 1).toUpperCase()}</span><div>{appAccess?.displayName || cloudUser?.email}<small>{t(appAccess?.role === 'admin' ? 'Quản trị viên' : 'Biên tập viên')}</small></div><button className="icon-button" title={t('Đăng xuất')} aria-label={t('Đăng xuất')} onClick={() => { void signOutCloud(); }}><LogOut size={15} /></button></div></div>
     </aside>}
     <div className={`main-shell ${isPublicBio ? 'bio-public-main' : ''}`}>
-      {!isPublicBio && <header className="topbar"><div className="breadcrumbs"><button className="mobile-menu icon-button" onClick={() => setMobileNav(v => !v)} aria-label={t('Mở menu')}><Menu size={20} /></button><span>{t('DT App')}</span><ChevronRight size={14} /><strong>{page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Tạo trang bio') : t('Kênh bán hàng')}</strong></div><div className="top-actions"><span className="version-tag">{t('BẢN THỬ NGHIỆM 0.1')}</span><button className="language-toggle" onClick={() => setLanguage(v => v === 'vi' ? 'en' : 'vi')} aria-label={language === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}>{language === 'vi' ? 'EN' : 'VI'}</button><button className="icon-button" onClick={() => setAppearance(v => v === 'light' ? 'dark' : 'light')} aria-label={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')} title={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')}>{appearance === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="icon-button help-button" aria-label={t('Trợ giúp')} onClick={() => setModal('help')}><CircleHelp size={19} /></button><span className="avatar">D</span></div></header>}
-      {page === 'dashboard' ? <main className="dashboard-page">
+      {!isPublicBio && <header className="topbar"><div className="breadcrumbs"><button className="mobile-menu icon-button" onClick={() => setMobileNav(v => !v)} aria-label={t('Mở menu')}><Menu size={20} /></button><span>{t('DT App')}</span><ChevronRight size={14} /><strong>{page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Chỉnh sửa bio') : page === 'bios' ? t('Các trang bio') : page === 'users' ? t('Người dùng') : t('Kênh bán hàng')}</strong></div><div className="top-actions"><span className="signed-in-email">{cloudUser?.email}</span><span className="version-tag">{t('BẢN THỬ NGHIỆM 0.1')}</span><button className="language-toggle" onClick={() => setLanguage(v => v === 'vi' ? 'en' : 'vi')} aria-label={language === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}>{language === 'vi' ? 'EN' : 'VI'}</button><button className="icon-button" onClick={() => setAppearance(v => v === 'light' ? 'dark' : 'light')} aria-label={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')} title={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')}>{appearance === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="icon-button help-button" aria-label={t('Trợ giúp')} onClick={() => setModal('help')}><CircleHelp size={19} /></button><button className="icon-button" aria-label={t('Đăng xuất')} title={t('Đăng xuất')} onClick={() => { void signOutCloud(); }}><LogOut size={16} /></button></div></header>}
+      {page === 'bios' ? <BioPagesPage bios={bioPages} urlFor={makeBioShareUrl} onCreate={startNewBio} onEdit={editBio} onDelete={id => { void removeBio(id); }} t={t} /> : page === 'users' ? <UsersPage client={cloudClient!} currentEmail={cloudUser?.email || ''} t={t} notify={notify} /> : page === 'dashboard' ? <main className="dashboard-page">
         <section className="dashboard-welcome">
           <div className="dashboard-welcome-copy"><div className="eyebrow"><span /> DT APP · {t('MỘT KHÔNG GIAN CHO SÁNG TẠO')}</div><h1>{t('Chào mừng đến DT App')}<span>.</span></h1><p>{t('Quản lý công cụ sáng tạo, thiết kế và cài đặt của bạn từ một nơi.')}</p><div className="dashboard-hero-actions"><button className="button primary" onClick={newProject}><Plus size={17} /> {t('Tạo poster mới')}</button><button className="button secondary" onClick={() => switchPage('projects')}><FolderHeart size={16} /> {t('Xem thiết kế đã lưu')}</button></div></div>
           <div className="dashboard-welcome-art"><div className="dashboard-sparkle sparkle-one">✳</div><div className="dashboard-sparkle sparkle-two">✦</div><div className="dashboard-preview"><PosterCanvas language={language} poster={poster} thumbnail /></div><div className="dashboard-preview-label"><span className="dashboard-preview-icon"><LayoutGrid size={16} /></span><span><strong>DT Poster Studio</strong><small>{t('Công cụ thiết kế poster')}</small></span><ArrowUpRight size={15} /></div></div>
@@ -514,7 +570,7 @@ export default function App() {
           <button className="dashboard-app-card" onClick={() => switchPage('projects')}><span className="dashboard-app-icon warm"><FolderHeart size={21} /></span><small>02 · {t('THƯ VIỆN')}</small><strong>{t('Thiết kế đã lưu')}</strong><span className="dashboard-app-description">{t('Mở lại và tiếp tục chỉnh sửa thiết kế của bạn.')}</span><span className="dashboard-card-action">{t('Mở thư viện')} <ArrowRight size={15} /></span></button>
           <button className="dashboard-app-card" onClick={() => switchPage('brand')}><span className="dashboard-app-icon violet"><Palette size={21} /></span><small>03 · {t('NHẬN DIỆN')}</small><strong>{t('Bộ thương hiệu')}</strong><span className="dashboard-app-description">{t('Lưu tên thương hiệu và màu cho poster tiếp theo.')}</span><span className="dashboard-card-action">{t('Mở bộ thương hiệu')} <ArrowRight size={15} /></span></button>
           <button className="dashboard-app-card" onClick={() => { setServerForm(connection); setModal('settings'); }}><span className="dashboard-app-icon blue"><Settings2 size={21} /></span><small>04 · {t('CÀI ĐẶT')}</small><strong>{t('Cài đặt kết nối')}</strong><span className="dashboard-app-description">{t('Chọn chế độ gợi ý và quản lý các API đã lưu.')}</span><span className="dashboard-card-action">{t('Mở cài đặt')} <ArrowRight size={15} /></span></button>
-          <button className="dashboard-app-card" onClick={() => switchPage('channels')}><span className="dashboard-app-icon blue"><Store size={21} /></span><small>05 · {t('BÁN HÀNG')}</small><strong>{t('Kênh bán hàng')}</strong><span className="dashboard-app-description">{t('Mở nhanh TikTok Shop, Shopee và các trang mạng xã hội.')}</span><span className="dashboard-card-action">{t('Mở các kênh')} <ArrowRight size={15} /></span></button>
+          <button className="dashboard-app-card" onClick={() => bioRecordId ? switchPage('channels') : switchPage('bios')}><span className="dashboard-app-icon blue"><Store size={21} /></span><small>05 · {t('BÁN HÀNG')}</small><strong>{t('Kênh bán hàng')}</strong><span className="dashboard-app-description">{t('Mở nhanh TikTok Shop, Shopee và các trang mạng xã hội.')}</span><span className="dashboard-card-action">{t('Mở các kênh')} <ArrowRight size={15} /></span></button>
           <button className="dashboard-app-card" onClick={() => switchPage('bio')}><span className="dashboard-app-icon violet"><Link2 size={21} /></span><small>06 · {t('TRANG BIO')}</small><strong>{t('Tạo trang bio')}</strong><span className="dashboard-app-description">{t('Gom các gian hàng và mạng xã hội vào một trang liên kết.')}</span><span className="dashboard-card-action">{t('Tạo trang bio')} <ArrowRight size={15} /></span></button>
         </section>
       </main> : page === 'editor' ? <main className="editor-page">
@@ -562,7 +618,7 @@ export default function App() {
           </section>
           <section className="template-panel panel"><div className="template-heading"><h2>{t("Chọn diện mạo")}</h2><span>{styles.length} {t('mẫu')}</span></div><div className="template-inner"><div className="right-label"><span className="step-number">03</span><h3>{t('Tỷ lệ thiết kế')}</h3></div><div className="ratio-grid">{ratios.map(r => <button key={r.id} className={poster.ratio === r.id ? 'selected' : ''} onClick={() => update({ ratio: r.id as RatioId })} title={`${t(r.name)} · ${r.width} × ${r.height}`}><span className="ratio-icon" style={{ width: r.width >= r.height ? 19 : 19 * r.width / r.height, height: r.height >= r.width ? 19 : 19 * r.height / r.width }} /><strong>{r.id}</strong></button>)}</div><div className="selected-ratio-name">{t(ratio.name)}<Check size={11} /></div><div className="section-divider" /><div className="right-label style-label"><span className="step-number">04</span><h3>{t('Phong cách của bạn')}</h3></div><div className="style-search"><Search size={13} /><input aria-label={t('Tìm phong cách')} placeholder={t('Tìm phong cách…')} value={styleFilter} onChange={e => setStyleFilter(e.target.value)} /></div><div className="template-grid">{styles.filter(s => `${t(s.name)} ${t(s.tag)} ${s.name} ${s.tag}`.toLocaleLowerCase(language).includes(styleFilter.toLocaleLowerCase(language))).map(style => <button className={`template-card ${poster.style === style.id ? 'selected' : ''}`} key={style.id} onClick={() => update({ style: style.id as StyleId, accent: style.accent })}><div className="template-preview"><PosterCanvas language={language} thumbnail poster={{ ...initialPoster, style: style.id, accent: style.accent }} />{poster.style === style.id && <span className="selected-check"><Check size={11} /></span>}</div><strong>{t(style.name)}</strong><small>{t(style.tag)}</small></button>)}</div>{styles.filter(s => `${t(s.name)} ${t(s.tag)} ${s.name} ${s.tag}`.toLocaleLowerCase(language).includes(styleFilter.toLocaleLowerCase(language))).length === 0 && <p className="muted">{t("Chưa có phong cách phù hợp. Thử từ khóa khác.")}</p>}<div className="section-divider" /><div className="color-heading"><h3>{t('Màu nhấn')}</h3><span>{poster.accent.toUpperCase()}</span></div><div className="swatches">{['#31564a', '#9b4439', '#806343', '#3e4fa0', '#82449b', '#e8c794'].map(color => <button key={color} aria-label={`${t('Màu')} ${color}`} title={color} className={poster.accent === color ? 'selected' : ''} style={{ backgroundColor: color }} onClick={() => update({ accent: color })}>{poster.accent === color && <Check size={12} color={color === '#e8c794' ? '#334b3b' : 'white'} />}</button>)}<label className="custom-color" title={t("Chọn màu tuỳ chỉnh")}><Plus size={13} /><input aria-label={t("Màu tuỳ chỉnh")} type="color" value={poster.accent} onChange={e => update({ accent: e.target.value })} /></label></div></div></section>
         </div><footer className="workspace-footer"><span><span className={`connection-dot ${serverStatus}`} /><button onClick={() => { setServerForm(connection); setModal('settings'); }}>{serverStatus === 'online' ? t('Đã kết nối server AI') : t('Kết nối server để dùng AI')} <ArrowUpRight size={11} /></button></span><span>{dirty ? t('Bản nháp tự lưu trên thiết bị') : t('Sẵn sàng sáng tạo')}<span className="footer-dot">·</span>{t("Được làm cho ý tưởng của bạn")} <span className="footer-spark">✳</span></span></footer>
-      </main> : page === 'projects' ? <main className="library-page"><div className="page-title"><div><div className="eyebrow">{t("GÓC SÁNG TẠO CỦA BẠN")}</div><h1>{t("Những ý tưởng đã thành hình")}<span>.</span></h1><p>{t("Thiết kế được lưu trên thiết bị và trình duyệt này.")}</p></div>{cloudUser && <button className="button secondary" onClick={() => refreshCloudProjects()} disabled={!!busy}><RotateCcw size={15} /> {t('Đồng bộ ngay')}</button>}<button className="button secondary" onClick={() => importRef.current?.click()}><Upload size={15} /> {t("Mở tệp thiết kế")}</button></div>{projects.length ? <div className="projects-grid">{projects.map(project => <article className="project-card" key={project.id}><button onClick={() => openProject(project)}><img src={project.thumbnail} alt={`Thiết kế ${project.name}`} /><h3>{project.name}</h3><p>{new Intl.DateTimeFormat(language === 'vi' ? 'vi-VN' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(project.savedAt)}</p></button><button className="icon-button delete-project" title={t("Xoá thiết kế đã lưu")} aria-label={`Xoá ${project.name}`} onClick={async () => { if (cloudClient && cloudUser) await deleteCloudProject(cloudClient, cloudUser, project.id); await deleteProject(project.id); setProjects(p => p.filter(v => v.id !== project.id)); if (projectId === project.id) setProjectId(null); notify(t("Đã xoá bản lưu.")); }}><Trash2 size={15} /></button></article>)}</div> : <div className="empty-state"><FolderHeart size={45} /><h2>{t("Mọi ý tưởng đều có một khởi đầu")}</h2><p>{t("Tạo poster đầu tiên và lưu lại để tiếp tục bất cứ lúc nào.")}</p><button className="button primary" onClick={() => switchPage('editor')}>{t("Bắt đầu thiết kế")} <ArrowRight size={15} /></button></div>}</main> : page === 'brand' ? <main className="brand-page"><div className="page-title"><div><div className="eyebrow">{t("NHẤT QUÁN TRONG TỪNG CHI TIẾT")}</div><h1>{t("Mang dấu ấn của bạn")}<span>.</span></h1><p>{t("Lưu tên và màu thương hiệu cho những thiết kế tiếp theo.")}</p></div></div><div className="brand-layout"><div className="panel brand-form"><label className="field-label" htmlFor="brand-name">{t("Tên thương hiệu")}</label><input id="brand-name" maxLength={32} value={brandName} onChange={e => setBrandName(e.target.value)} /><label className="field-label" htmlFor="brand-color">{t("Màu thương hiệu")}</label><div className="brand-color-field"><input id="brand-color" type="color" value={brandColor} onChange={e => setBrandColor(e.target.value)} /><span>{brandColor.toUpperCase()}</span></div><button className="button primary full" onClick={() => { try { localStorage.setItem('dt.brand', brandName); localStorage.setItem('dt.brandColor', brandColor); update({ brand: brandName, accent: brandColor }); notify(t("Đã lưu thương hiệu và áp dụng vào poster hiện tại.")); } catch (e) { notify(errorMessage(e), true); } }}><Check size={16} /> {t("Lưu & áp dụng")}</button></div><div className="brand-preview" style={{ backgroundColor: brandColor }}><span>{t("BỘ NHẬN DIỆN CỦA BẠN")}</span><h2>{brandName || t('Thương hiệu của bạn')}</h2><span>Every little detail tells a story.</span></div></div></main> : page === 'bio' ? (isPublicBio ? <main className="bio-public-page">{sharedBioLoading ? <div className="bio-public-card"><LoaderCircle className="spin" size={25} /><p>{t('Đang tải trang bio...')}</p></div> : sharedBioError ? <div className="bio-public-card"><span className="bio-kicker">DT APP</span><h1>{t('Không mở được trang bio')}</h1><p className="bio-public-description">{sharedBioError}</p><a className="button secondary" href={import.meta.env.BASE_URL}>{t('Về DT App')}</a></div> : sharedBio ? <article className="bio-public-card"><img src={import.meta.env.BASE_URL + 'tap-hoa-dt-logo.svg'} alt={t('Logo Tạp Hoá DT')} /><span className="bio-kicker">{t('CỬA HÀNG CHÍNH THỨC')}</span><h1>{sharedBio.name}</h1>{sharedBio.description && <p className="bio-public-description">{sharedBio.description}</p>}<BioLinks channels={sharedBio.channels} language={language} /><footer>{t('Thiết kế bằng')} <strong>DT App</strong></footer></article> : <div className="bio-public-card"><h1>{t('Không tìm thấy trang bio')}</h1></div>}</main> : <BioBuilderPage name={bioName} description={bioDescription} channels={channels} shareUrl={bioShareUrl} saving={!!busy} language={language} onNameChange={setBioName} onDescriptionChange={setBioDescription} onSave={() => { void saveBio(true); }} onCopy={() => { void copyBioLink(); }} onOpenChannels={() => switchPage('channels')} t={t} />) : <SalesChannelsPage channels={channels} onChange={setChannels} onSave={() => { void saveBio(false); }} onOpenBio={() => switchPage('bio')} busy={!!busy} t={t} />}
+      </main> : page === 'projects' ? <main className="library-page"><div className="page-title"><div><div className="eyebrow">{t("GÓC SÁNG TẠO CỦA BẠN")}</div><h1>{t("Những ý tưởng đã thành hình")}<span>.</span></h1><p>{t("Thiết kế được lưu trên thiết bị và trình duyệt này.")}</p></div>{cloudUser && <button className="button secondary" onClick={() => refreshCloudProjects()} disabled={!!busy}><RotateCcw size={15} /> {t('Đồng bộ ngay')}</button>}<button className="button secondary" onClick={() => importRef.current?.click()}><Upload size={15} /> {t("Mở tệp thiết kế")}</button></div>{projects.length ? <div className="projects-grid">{projects.map(project => <article className="project-card" key={project.id}><button onClick={() => openProject(project)}><img src={project.thumbnail} alt={`Thiết kế ${project.name}`} /><h3>{project.name}</h3><p>{new Intl.DateTimeFormat(language === 'vi' ? 'vi-VN' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(project.savedAt)}</p></button><button className="icon-button delete-project" title={t("Xoá thiết kế đã lưu")} aria-label={`Xoá ${project.name}`} onClick={async () => { if (cloudClient && cloudUser) await deleteCloudProject(cloudClient, cloudUser, project.id); await deleteProject(project.id); setProjects(p => p.filter(v => v.id !== project.id)); if (projectId === project.id) setProjectId(null); notify(t("Đã xoá bản lưu.")); }}><Trash2 size={15} /></button></article>)}</div> : <div className="empty-state"><FolderHeart size={45} /><h2>{t("Mọi ý tưởng đều có một khởi đầu")}</h2><p>{t("Tạo poster đầu tiên và lưu lại để tiếp tục bất cứ lúc nào.")}</p><button className="button primary" onClick={() => switchPage('editor')}>{t("Bắt đầu thiết kế")} <ArrowRight size={15} /></button></div>}</main> : page === 'brand' ? <main className="brand-page"><div className="page-title"><div><div className="eyebrow">{t("NHẤT QUÁN TRONG TỪNG CHI TIẾT")}</div><h1>{t("Mang dấu ấn của bạn")}<span>.</span></h1><p>{t("Lưu tên và màu thương hiệu cho những thiết kế tiếp theo.")}</p></div></div><div className="brand-layout"><div className="panel brand-form"><label className="field-label" htmlFor="brand-name">{t("Tên thương hiệu")}</label><input id="brand-name" maxLength={32} value={brandName} onChange={e => setBrandName(e.target.value)} /><label className="field-label" htmlFor="brand-color">{t("Màu thương hiệu")}</label><div className="brand-color-field"><input id="brand-color" type="color" value={brandColor} onChange={e => setBrandColor(e.target.value)} /><span>{brandColor.toUpperCase()}</span></div><button className="button primary full" onClick={() => { try { localStorage.setItem('dt.brand', brandName); localStorage.setItem('dt.brandColor', brandColor); update({ brand: brandName, accent: brandColor }); notify(t("Đã lưu thương hiệu và áp dụng vào poster hiện tại.")); } catch (e) { notify(errorMessage(e), true); } }}><Check size={16} /> {t("Lưu & áp dụng")}</button></div><div className="brand-preview" style={{ backgroundColor: brandColor }}><span>{t("BỘ NHẬN DIỆN CỦA BẠN")}</span><h2>{brandName || t('Thương hiệu của bạn')}</h2><span>Every little detail tells a story.</span></div></div></main> : page === 'bio' ? (isPublicBio ? <main className="bio-public-page">{sharedBioLoading ? <div className="bio-public-card"><LoaderCircle className="spin" size={25} /><p>{t('Đang tải trang bio...')}</p></div> : sharedBioError ? <div className="bio-public-card"><span className="bio-kicker">DT APP</span><h1>{t('Không mở được trang bio')}</h1><p className="bio-public-description">{sharedBioError}</p><a className="button secondary" href={appBaseUrl()}>{t('Về DT App')}</a></div> : sharedBio ? <article className="bio-public-card"><img src={`${appBaseUrl()}tap-hoa-dt-logo.svg`} alt={t('Logo Tạp Hoá DT')} /><span className="bio-kicker">{t('CỬA HÀNG CHÍNH THỨC')}</span><h1>{sharedBio.name}</h1>{sharedBio.description && <p className="bio-public-description">{sharedBio.description}</p>}<BioLinks channels={sharedBio.channels} language={language} /><footer>{t('Thiết kế bằng')} <strong>DT App</strong></footer></article> : <div className="bio-public-card"><h1>{t('Không tìm thấy trang bio')}</h1></div>}</main> : <BioBuilderPage name={bioName} description={bioDescription} channels={channels} slug={bioSlug} existingSlugs={bioPages.filter(item => item.id !== bioRecordId).map(item => item.slug)} shareUrl={bioShareUrl} saving={!!busy} language={language} onNameChange={setBioName} onDescriptionChange={setBioDescription} onSlugChange={setBioSlug} onSave={() => { void saveBio(true); }} onCopy={() => { void copyBioLink(); }} onOpenChannels={() => switchPage('channels')} t={t} />) : <SalesChannelsPage channels={channels} onChange={setChannels} onSave={() => { void saveBio(false); }} onOpenBio={() => switchPage('bio')} busy={!!busy} t={t} />}
     </div>
     <input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" ref={fileRef} onChange={e => upload(e.target.files?.[0])} aria-label={t("Chọn ảnh sản phẩm")} />
     <input className="sr-only" type="file" accept=".json" ref={importRef} onChange={e => importProject(e.target.files?.[0])} aria-label={t("Mở tệp thiết kế")} />
@@ -570,20 +626,9 @@ export default function App() {
     {busy && <div className="busy-pill" role="status"><LoaderCircle size={17} className="spin" /><span>{busy}</span>{abortRef.current && <button onClick={() => abortRef.current?.abort()}>{t("Huỷ")}</button>}</div>}
     {modal === 'export' && <ModalBox title={t("Sẵn sàng toả sáng.")} close={closeModal}><p className="modal-subtitle">{t("Xuất poster hoàn chỉnh, không có watermark.")}</p><div className="export-summary"><div className="export-thumb"><PosterCanvas language={language} poster={poster} thumbnail /></div><div><strong>{poster.name || t('Thiết kế của bạn')}</strong><p>{theme.name} · {poster.ratio}</p><small>{ratio.width * exportScale} × {ratio.height * exportScale} px</small></div></div><label className="field-label" htmlFor="export-format">{t("Định dạng")}</label><select id="export-format" value={exportFormat} onChange={e => setExportFormat(e.target.value as 'png' | 'jpeg')}><option value="png">{t("PNG — chi tiết rõ nét")}</option><option value="jpeg">{t("JPG — dung lượng nhẹ")}</option></select><label className="field-label" htmlFor="export-scale">{t("Độ phân giải")}</label><select id="export-scale" value={exportScale} onChange={e => setExportScale(+e.target.value)}><option value="1">1× · {ratio.width} × {ratio.height} px</option><option value="2">2× · {ratio.width * 2} × {ratio.height * 2} px</option></select><button className="button primary full export-action" disabled={!!busy} onClick={exportImage}><ArrowDownToLine size={17} /> {t("Tải poster xuống")}</button><div className="export-project-links"><button className="text-button" onClick={projectFile}><Copy size={13} /> {t("Tải tệp để chỉnh sửa sau")}</button><button className="text-button" onClick={() => importRef.current?.click()}><Upload size={13} /> {t("Mở tệp thiết kế")}</button></div></ModalBox>}
     {modal === 'settings' && <ModalBox title={t("Kết nối máy chủ AI")} close={closeModal}><p className="modal-subtitle">{t("Web và app dùng chung server để xoá nền, nhận diện ảnh và viết nội dung.")}</p><label className="field-label" htmlFor="server-url">{t("Địa chỉ server")}</label><input id="server-url" type="url" value={serverForm.url} onChange={e => setServerForm(s => ({ ...s, url: e.target.value }))} placeholder="https://poster-api.tenmien.vn" /><p className="field-help">{t("Để trống nếu web và API cùng tên miền. Server từ xa cần HTTPS.")}</p><label className="field-label" htmlFor="server-token">{t("Mã truy cập server (nếu có)")}</label><input id="server-token" type="password" value={serverForm.token} onChange={e => setServerForm(s => ({ ...s, token: e.target.value }))} placeholder={t("Mã do quản trị server cung cấp")} autoComplete="off" /><p className="field-help">{t("Mã chỉ giữ trong phiên này. API cá nhân được lưu mã hoá trên thiết bị.")}</p><section className="cloud-settings">
-  <div className="provider-heading"><div><span className="eyebrow">SUPABASE CLOUD</span><h3>{t('Lưu thiết kế trên đám mây')}</h3></div><span className={`provider-badge ${cloudUser ? 'connected' : ''}`}>{cloudUser ? cloudUser.is_anonymous ? t('Tài khoản khách') : cloudUser.email : t('Tự động đăng nhập khi lưu')}</span></div>
-  <p>{cloudClient ? t('Supabase đã sẵn sàng. Khi bạn lưu bio, DT App sẽ tự tạo phiên khách.') : t('Hãy mở cài đặt nâng cao để thiết lập kết nối Supabase.')}</p>
-  <details className="cloud-advanced">
-    <summary>{t('Cài đặt kết nối Supabase nâng cao')}</summary>
-    <div className="cloud-advanced-fields">
-      <p>{t('Nhập Project URL và publishable/anon key từ Supabase. Khóa này công khai; bảo vệ dữ liệu bằng đăng nhập và RLS, không dùng service_role key.')}</p>
-      <label className="field-label" htmlFor="supabase-url">Project URL</label><input id="supabase-url" type="url" value={cloudForm.url} onChange={e => setCloudForm(v => ({ ...v, url: e.target.value }))} placeholder="https://your-project.supabase.co" />
-      <label className="field-label" htmlFor="supabase-anon">{t('Publishable key / anon key')}</label><input id="supabase-anon" type="password" value={cloudForm.anonKey} onChange={e => setCloudForm(v => ({ ...v, anonKey: e.target.value }))} placeholder="sb_publishable_…" autoComplete="off" />
-      <div className="provider-actions"><button className="button secondary" onClick={connectCloud}><CheckCircle2 size={15} /> {t('Lưu cấu hình Supabase')}</button><a className="text-button" href="./poster_cloud.sql" target="_blank" rel="noreferrer">{t('Mở schema đồng bộ')} <ArrowUpRight size={13} /></a></div>
-    </div>
-  </details>
-  {cloudClient && !cloudUser ? <details className="cloud-login-optional"><summary>{t('Đăng nhập tài khoản hiện có (tuỳ chọn)')}</summary><div className="cloud-optional-login-fields"><label className="field-label" htmlFor="cloud-email">Email</label><input id="cloud-email" type="email" value={cloudEmail} onChange={e => setCloudEmail(e.target.value)} autoComplete="email" /><label className="field-label" htmlFor="cloud-password">{t('Mật khẩu tài khoản Supabase')}</label><input id="cloud-password" type="password" value={cloudPassword} onChange={e => setCloudPassword(e.target.value)} autoComplete="current-password" /><div className="provider-actions"><button className="button primary" onClick={signInCloud} disabled={!!busy}>{t('Đăng nhập')}</button><button className="text-button" onClick={signUpCloud} disabled={!!busy}>{t('Tạo tài khoản mới')}</button></div></div></details> : cloudUser ? <div className="provider-actions"><button className="button secondary" onClick={() => refreshCloudProjects()} disabled={!!busy}><RotateCcw size={14} /> {t('Đồng bộ ngay')}</button>{!cloudUser.is_anonymous && <button className="text-button" onClick={signOutCloud}>{t('Đăng xuất')}</button>}</div> : null}
-  <p className="field-help">{t('Bio, kênh bán hàng và thiết kế được đồng bộ vào phiên Supabase trên thiết bị này.')}</p>
-  {cloudClient && (!cloudUser || cloudUser.is_anonymous) && <p className="field-help">{t('Phiên khách được giữ trên thiết bị này. Xóa dữ liệu trình duyệt hoặc đổi thiết bị thì không thể khôi phục phiên và dữ liệu.')}</p>}
+  <div className="provider-heading"><div><span className="eyebrow">GOOGLE SIGN-IN</span><h3>{t('Tài khoản đang kết nối')}</h3></div><span className="provider-badge connected">{cloudUser?.email}</span></div>
+  <p>{t('Bio, kênh bán hàng và thiết kế riêng được đồng bộ vào Supabase. Quyền truy cập được quản lý theo email Google.')}</p>
+  <div className="provider-actions"><button className="button secondary" onClick={() => refreshCloudProjects()} disabled={!!busy}><RotateCcw size={14} /> {t('Đồng bộ ngay')}</button><button className="text-button" onClick={() => { void signOutCloud(); }} disabled={!!busy}>{t('Đăng xuất')}</button></div>
 </section><section className="provider-help api-keys-panel">
   <div className="provider-heading"><div><span className="eyebrow">{t('API CÁ NHÂN')}</span><h3>{t('Thêm và chuyển API')}</h3></div><span className={`provider-badge ${useAiApi ? 'connected' : ''}`}>{useAiApi ? t('API AI đang bật') : t('API AI đã tắt')}</span></div>
   <div className="ai-mode-row"><div><strong>{t('Cho phép dùng API AI')}</strong><p>{t(useAiApi ? 'API AI đang bật. Chỉ gợi ý tên và mô tả từ ảnh mới gọi nhà cung cấp; xóa nền vẫn dùng U²-Net trên server.' : 'API AI đang tắt. Gợi ý tên và mô tả dùng thư viện cục bộ; ảnh, nội dung và khóa không gửi tới nhà cung cấp. Xóa nền vẫn dùng U²-Net trên server.')}</p></div><button type="button" className={`ai-mode-toggle ${useAiApi ? 'enabled' : ''}`} role="switch" aria-checked={useAiApi} onClick={toggleAiApi}>{useAiApi ? t('Đang bật') : t('Đang tắt')}</button></div>
