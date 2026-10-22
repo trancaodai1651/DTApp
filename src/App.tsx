@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, AtSign, Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Copy, Facebook, FolderHeart, Home, ImagePlus, Instagram, Layers3, LayoutGrid, Leaf, Link2, LoaderCircle, Menu, Minus, Moon, MousePointer2, Music2, Palette, Plus, Redo2, RotateCcw, Save, Search, Settings2, ShieldCheck, ShoppingBag, SlidersHorizontal, Sparkles, Store, Sun, Trash2, Undo2, Upload, WandSparkles, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Copy, FolderHeart, Home, ImagePlus, Layers3, LayoutGrid, Leaf, Link2, LoaderCircle, Menu, Minus, Moon, MousePointer2, Palette, Plus, Redo2, RotateCcw, Save, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Store, Sun, Trash2, Undo2, Upload, WandSparkles, X } from 'lucide-react';
 import { initialPoster, styles, ratios, categories, type Poster, type StyleId, type RatioId } from './model';
 import { renderPoster, exportPoster, downloadBlob } from './renderer';
 import { readProduct, visionImage, backgroundImage } from './image-tools';
@@ -8,56 +8,27 @@ import { saveProject, getProjects, deleteProject, type SavedProject } from './st
 import { apiRequest, connectionUrl, type Connection } from './api';
 import { loadAIProfiles, saveAIProfiles, type AIProfile, type AIProviderId } from './ai-profiles';
 import { translate, type Language } from './i18n';
-import { configureCloud, configuredClient, deleteCloudProject, readCloudConfig, readCloudProjects, uploadCloudProject, type CloudConfig } from './cloud';
+import { configureCloud, configuredClient, deleteCloudProject, readCloudBio, readCloudConfig, readCloudProjects, readPublicBio, saveCloudBio, uploadCloudProject, type CloudConfig } from './cloud';
 import type { User } from '@supabase/supabase-js';
+import { BioBuilderPage, BioLinks, channelHref, createDefaultChannels, defaultDestinations, readSharedBio as readLegacySharedBio, readBioShareId, sanitizeSalesChannels, SalesChannelsPage, type BioProfile, type SalesChannel } from './sales-channels';
 
-type ChannelId = 'tiktok' | 'shopee' | 'facebook' | 'threads' | 'instagram';
 type Page = 'dashboard' | 'editor' | 'projects' | 'brand' | 'channels' | 'bio';
 type Modal = 'export' | 'settings' | 'help' | null;
 interface Suggestions { names: string[]; descriptions: string[]; source: string }
-interface BioData { name: string; description: string; links: Partial<Record<ChannelId, string>> }
 const safeRead = (key: string, fallback = '') => { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } };
-const defaultChannelUrls: Record<ChannelId, string> = { tiktok: 'https://www.tiktok.com/', shopee: 'https://shopee.vn/', facebook: 'https://www.facebook.com/', threads: 'https://www.threads.net/', instagram: 'https://www.instagram.com/' };
-const bioChannelOrder: ChannelId[] = ['shopee', 'tiktok', 'facebook', 'threads', 'instagram'];
-const socialChannels = [
-  { id: 'tiktok', name: 'TikTok Shop', detail: 'Video ngắn & mua sắm', icon: Music2 },
-  { id: 'shopee', name: 'Shopee', detail: 'Gian hàng trực tuyến', icon: ShoppingBag },
-  { id: 'facebook', name: 'Facebook', detail: 'Trang và cộng đồng', icon: Facebook },
-  { id: 'threads', name: 'Threads', detail: 'Trò chuyện cùng khách hàng', icon: AtSign },
-  { id: 'instagram', name: 'Instagram', detail: 'Ảnh và câu chuyện thương hiệu', icon: Instagram },
-] as const;
-function readSharedBio(): BioData | null {
-  if (typeof window === 'undefined' || !window.location.hash.startsWith('#bio=')) return null;
-  try {
-    const raw = JSON.parse(decodeURIComponent(window.location.hash.slice(5))) as Partial<BioData>;
-    if (!raw || typeof raw !== 'object') return null;
-    const links: BioData['links'] = {};
-    for (const id of bioChannelOrder) {
-      const candidate = raw.links?.[id];
-      if (typeof candidate !== 'string') continue;
-      try { const url = new URL(candidate); if (url.protocol === 'https:') links[id] = url.href; }
-      catch { continue; }
-    }
-    if (!Object.keys(links).length) return null;
-    return {
-      name: typeof raw.name === 'string' ? raw.name.trim().slice(0, 60) || 'Tạp Hoá DT' : 'Tạp Hoá DT',
-      description: typeof raw.description === 'string' ? raw.description.trim().slice(0, 240) : '',
-      links,
-    };
-  } catch { return null; }
-}
-function BioLinks({ links, language }: { links: BioData['links']; language: Language }) {
-  const t = (text: string) => translate(language, text);
-  return <div className="bio-links">{bioChannelOrder.map((id, index) => {
-    const href = links[id];
-    if (!href) return null;
-    const channel = socialChannels.find(item => item.id === id)!;
-    const Icon = channel.icon;
-    const label = id === 'shopee' ? t('Shopee Shop') : channel.name;
-    return <a className={`bio-link-card ${index < 2 ? 'priority' : 'social'}`} href={href} target="_blank" rel="noopener noreferrer" key={id}><span className="bio-link-icon"><Icon size={19} /></span><span className="bio-link-copy"><small>{index < 2 ? t('ƯU TIÊN MUA SẮM') : t('MẠNG XÃ HỘI')}</small><strong>{label}</strong></span><span className="bio-link-number">0{index + 1}</span><ArrowUpRight className="bio-link-arrow" size={17} /></a>;
-  })}</div>;
-}
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Có lỗi xảy ra. Hãy thử lại.';
+function readLocalSalesChannels(): SalesChannel[] {
+  try {
+    const saved = safeRead('dt.salesChannels');
+    if (saved) return sanitizeSalesChannels(JSON.parse(saved));
+    return createDefaultChannels(JSON.parse(safeRead('dt.channelUrls', '{}')));
+  } catch { return createDefaultChannels(); }
+}
+function makeBioShareUrl(shareId: string): string {
+  const base = window.location.protocol === 'file:' ? 'https://trancaodai1651.github.io/DTApp/' : import.meta.env.BASE_URL;
+  const url = new URL(base, window.location.href); url.hash = `bio=${shareId}`;
+  return url.toString();
+}
 const aiProviders: Record<AIProviderId, { label: string; key: string; modelEnv: string; model: string; url: string }> = {
   openai: { label: 'ChatGPT / OpenAI', key: 'OPENAI_API_KEY', modelEnv: 'OPENAI_MODEL', model: 'gpt-4.1-mini', url: 'https://platform.openai.com/api-keys' },
   gemini: { label: 'Gemini', key: 'GEMINI_API_KEY', modelEnv: 'GEMINI_MODEL', model: 'gemini-3.8-flash', url: 'https://aistudio.google.com/apikey' },
@@ -119,12 +90,17 @@ export default function App() {
   const setHistory = (next: Poster[]) => setTimeline(t => ({ ...t, history: next }));
   const setCursor = useCallback((next: number | ((value: number) => number)) => setTimeline(t => ({ ...t, cursor: typeof next === 'function' ? next(t.cursor) : next })), []);
   const poster = history[cursor];
-  const [sharedBio, setSharedBio] = useState<BioData | null>(() => readSharedBio());
-  const [page, setPage] = useState<Page>(() => readSharedBio() ? 'bio' : 'dashboard');
-  const [channelUrls, setChannelUrls] = useState<Record<string, string>>(() => { try { return { ...defaultChannelUrls, ...JSON.parse(safeRead('dt.channelUrls', '{}')) }; } catch { return defaultChannelUrls; } });
+  const [sharedBio, setSharedBio] = useState<BioProfile | null>(() => readLegacySharedBio());
+  const [sharedBioId, setSharedBioId] = useState<string | null>(() => readBioShareId());
+  const [sharedBioLoading, setSharedBioLoading] = useState(false);
+  const [sharedBioError, setSharedBioError] = useState('');
+  const [page, setPage] = useState<Page>(() => readBioShareId() || readLegacySharedBio() ? 'bio' : 'dashboard');
+  const [channels, setChannels] = useState<SalesChannel[]>(readLocalSalesChannels);
   const [bioName, setBioName] = useState(() => safeRead('dt.bioName', safeRead('dt.brand', 'Tạp Hoá DT') || 'Tạp Hoá DT'));
   const [bioDescription, setBioDescription] = useState(() => safeRead('dt.bioDescription', safeRead('dt.language', 'vi') === 'en' ? 'Your favorite shop, selected products, and fresh offers every day.' : 'Gian hàng yêu thích, sản phẩm được chọn và ưu đãi mới mỗi ngày.'));
-  const [bioShareUrl, setBioShareUrl] = useState('');
+  const [bioShareId, setBioShareId] = useState(() => safeRead('dt.bioShareId'));
+  const [bioIsPublished, setBioIsPublished] = useState(() => safeRead('dt.bioIsPublished') === '1');
+  const [bioShareUrl, setBioShareUrl] = useState(() => safeRead('dt.bioIsPublished') === '1' && safeRead('dt.bioShareId') ? makeBioShareUrl(safeRead('dt.bioShareId')) : '');
   const [modal, setModal] = useState<Modal>(null);
   const closeModal = useCallback(() => setModal(null), []);
   const [mobileNav, setMobileNav] = useState(false);
@@ -154,6 +130,7 @@ export default function App() {
   const [cloudForm, setCloudForm] = useState<CloudConfig>(() => readCloudConfig());
   const [cloudClient, setCloudClient] = useState(() => configuredClient());
   const [cloudUser, setCloudUser] = useState<User | null>(null);
+  const [bioCloudReady, setBioCloudReady] = useState(false);
   const [cloudEmail, setCloudEmail] = useState('');
   const [cloudPassword, setCloudPassword] = useState('');
   const [exportFormat, setExportFormat] = useState<'png' | 'jpeg'>('png');
@@ -165,6 +142,8 @@ export default function App() {
   const importRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const aiRequestRef = useRef<AbortController | null>(null);
+  const bioDraftRef = useRef<BioProfile>({ name: bioName, description: bioDescription, channels });
+  bioDraftRef.current = { name: bioName, description: bioDescription, channels };
   const notify = useCallback((text: string, error = false) => setToast({ text, error }), []);
   const update = useCallback((changes: Partial<Poster>) => {
     setTimeline(t => ({ history: [...t.history.slice(0, t.cursor + 1), { ...t.history[t.cursor], ...changes }].slice(-60), cursor: Math.min(t.cursor + 1, 59) }));
@@ -173,14 +152,16 @@ export default function App() {
   const theme = styles.find(s => s.id === poster.style)!;
   const activeAIProfile = aiProfiles.find(profile => profile.id === activeAIProfileId) || null;
   const dirty = savedPoster !== poster;
+  const isPublicBio = Boolean(sharedBioId || sharedBio);
 
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(null), 5000); return () => clearTimeout(timeout); }, [toast]);
   useEffect(() => { document.documentElement.lang = language; try { localStorage.setItem('dt.language', language); } catch {} }, [language]);
   useEffect(() => { document.documentElement.dataset.theme = appearance; try { localStorage.setItem('dt.theme', appearance); } catch {} }, [appearance]);
   useEffect(() => {
     const onHashChange = () => {
-      const next = readSharedBio(); setSharedBio(next);
-      if (next) { setPage('bio'); setMobileNav(false); }
+      const shareId = readBioShareId(); const legacy = shareId ? null : readLegacySharedBio();
+      setSharedBioId(shareId); setSharedBio(legacy); setSharedBioError('');
+      if (shareId || legacy) { setPage('bio'); setMobileNav(false); }
       else setPage(current => current === 'bio' ? 'dashboard' : current);
     };
     window.addEventListener('hashchange', onHashChange);
@@ -189,9 +170,17 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem('dt.bioName', bioName); } catch {} }, [bioName]);
   useEffect(() => { try { localStorage.setItem('dt.bioDescription', bioDescription); } catch {} }, [bioDescription]);
   useEffect(() => {
-    const pageName = sharedBio ? `${sharedBio.name} · ${t('Trang bio')}` : page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Tạo trang bio') : t('Kênh bán hàng');
-    document.title = sharedBio ? pageName : `${t('DT App')} · ${pageName}`;
-  }, [page, language, sharedBio]);
+    try {
+      localStorage.setItem('dt.salesChannels', JSON.stringify(channels));
+      const legacyUrls = Object.fromEntries(channels.filter(channel => channel.platform !== 'custom').map(channel => [channel.id, channel.destination || defaultDestinations[channel.platform as keyof typeof defaultDestinations]]));
+      localStorage.setItem('dt.channelUrls', JSON.stringify(legacyUrls));
+    } catch {}
+  }, [channels]);
+  useEffect(() => { try { localStorage.setItem('dt.bioShareId', bioShareId); localStorage.setItem('dt.bioIsPublished', bioIsPublished ? '1' : '0'); } catch {} }, [bioShareId, bioIsPublished]);
+  useEffect(() => {
+    const pageName = sharedBio ? `${sharedBio.name} · ${t('Trang bio')}` : sharedBioId ? t('Trang bio') : page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Tạo trang bio') : t('Kênh bán hàng');
+    document.title = sharedBio || sharedBioId ? pageName : `${t('DT App')} · ${pageName}`;
+  }, [page, language, sharedBio, sharedBioId]);
   useEffect(() => {
     let mounted = true;
     loadAIProfiles().then(profiles => {
@@ -209,10 +198,40 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!cloudClient) { setCloudUser(null); return; }
-    cloudClient.auth.getSession().then(({ data }) => setCloudUser(data.session?.user || null));
-    const { data: listener } = cloudClient.auth.onAuthStateChange((_event, session) => setCloudUser(session?.user || null));
-    return () => listener.subscription.unsubscribe();
+    let mounted = true;
+    cloudClient.auth.getSession().then(({ data }) => { if (mounted) setCloudUser(data.session?.user || null); });
+    const { data: listener } = cloudClient.auth.onAuthStateChange((_event, session) => { if (mounted) setCloudUser(session?.user || null); });
+    return () => { mounted = false; listener.subscription.unsubscribe(); };
   }, [cloudClient]);
+  useEffect(() => {
+    if (!cloudClient || !cloudUser) { setBioCloudReady(false); return; }
+    let mounted = true;
+    setBioCloudReady(false);
+    readCloudBio(cloudClient, cloudUser).then(async remote => {
+      if (!mounted) return;
+      if (remote) {
+        setBioName(remote.name); setBioDescription(remote.description); setChannels(remote.channels);
+        setBioShareId(remote.shareId); setBioIsPublished(remote.isPublished);
+        setBioShareUrl(remote.isPublished ? makeBioShareUrl(remote.shareId) : '');
+        return;
+      }
+      const initial = await saveCloudBio(cloudClient, cloudUser, bioDraftRef.current, null, false);
+      if (mounted) { setBioShareId(initial.shareId); setBioIsPublished(false); setBioShareUrl(''); }
+    }).then(() => { if (mounted) setBioCloudReady(true); }).catch(error => { if (mounted) notify(`${t('Không tải được dữ liệu Supabase:')} ${errorMessage(error)}`, true); });
+    return () => { mounted = false; };
+  }, [cloudClient, cloudUser]);
+  useEffect(() => {
+    if (!sharedBioId) { setSharedBioLoading(false); return; }
+    if (!cloudClient) { setSharedBioLoading(false); setSharedBioError(t('Chưa kết nối được Supabase để mở trang bio.')); return; }
+    let mounted = true;
+    setSharedBio(null); setSharedBioLoading(true); setSharedBioError('');
+    readPublicBio(cloudClient, sharedBioId).then(result => {
+      if (!mounted) return;
+      if (result) setSharedBio(result); else setSharedBioError(t('Không tìm thấy trang bio này hoặc trang chưa được xuất bản.'));
+    }).catch(error => { if (mounted) setSharedBioError(`${t('Không tải được trang bio:')} ${errorMessage(error)}`); })
+      .finally(() => { if (mounted) setSharedBioLoading(false); });
+    return () => { mounted = false; };
+  }, [sharedBioId, cloudClient, language]);
   useEffect(() => {
     getProjects().then(list => { setProjects(list.filter(p => p.id !== '__draft__')); setDraft(list.find(p => p.id === '__draft__') || null); }).catch(e => notify(errorMessage(e), true));
   }, [notify]);
@@ -432,31 +451,29 @@ export default function App() {
     else { setProjects((await getProjects()).filter(project => project.id !== '__draft__')); notify(t('Đã đăng xuất Supabase.')); }
   }
   const switchPage = (next: Page) => { setPage(next); setMobileNav(false); };
-  const saveChannelUrl = (id: ChannelId) => {
-    const value = channelUrls[id]?.trim() || defaultChannelUrls[id];
+  const saveBio = async (publish = false) => {
+    if (!cloudClient) { setModal('settings'); notify(t('Hãy kết nối và đăng nhập Supabase để lưu dữ liệu.')); return; }
+    if (!cloudUser) { setModal('settings'); notify(t('Đăng nhập Supabase để lưu trang bio và kênh bán hàng.')); return; }
+    if (!bioCloudReady) { notify(t('Đang đồng bộ trang bio từ Supabase, hãy thử lại sau giây lát.')); return; }
+    const invalid = channels.find(channel => channel.destination && !channelHref(channel));
+    if (invalid) { notify(`${t('Kiểm tra đường dẫn hoặc số điện thoại của kênh:')} ${invalid.name}`, true); return; }
+    setBusy(t('Đang lưu trang bio lên Supabase…'));
     try {
-      const parsed = new URL(value);
-      if (parsed.protocol !== 'https:') throw new Error(t('Liên kết phải bắt đầu bằng HTTPS.'));
-      const next = { ...channelUrls, [id]: parsed.href };
-      localStorage.setItem('dt.channelUrls', JSON.stringify(next)); setChannelUrls(next); notify(t('Đã lưu liên kết kênh.'));
-    } catch (error) { notify(error instanceof Error && error.message === t('Liên kết phải bắt đầu bằng HTTPS.') ? error.message : t('Vui lòng nhập một liên kết HTTPS hợp lệ.'), true); }
+      const saved = await saveCloudBio(cloudClient, cloudUser, { name: bioName, description: bioDescription, channels }, bioShareId || null, publish || bioIsPublished);
+      setBioName(saved.name); setBioDescription(saved.description); setChannels(saved.channels);
+      setBioShareId(saved.shareId); setBioIsPublished(saved.isPublished);
+      setBioShareUrl(saved.isPublished ? makeBioShareUrl(saved.shareId) : '');
+      notify(saved.isPublished ? t('Đã lưu và cập nhật trang bio trên Supabase.') : t('Đã lưu các kênh vào Supabase.'));
+    } catch (error) { notify(`${t('Không lưu được trang bio:')} ${errorMessage(error)}`, true); }
+    finally { setBusy(''); }
   };
-  const channelDestination = (id: ChannelId) => {
-    try { const url = new URL(channelUrls[id] || defaultChannelUrls[id]); return url.protocol === 'https:' ? url.href : defaultChannelUrls[id]; }
-    catch { return defaultChannelUrls[id]; }
-  };
-  const currentBioLinks = Object.fromEntries(bioChannelOrder.map(id => [id, channelDestination(id)])) as BioData['links'];
   const copyBioLink = async () => {
-    const payload: BioData = { name: bioName.trim() || 'Tạp Hoá DT', description: bioDescription.trim(), links: currentBioLinks };
-    const base = window.location.protocol === 'file:' ? 'https://trancaodai1651.github.io/DTApp/' : import.meta.env.BASE_URL;
-    const url = new URL(base, window.location.href); url.hash = `bio=${encodeURIComponent(JSON.stringify(payload))}`;
-    setBioShareUrl(url.toString());
-    try { await navigator.clipboard.writeText(url.toString()); notify(t('Đã sao chép liên kết trang bio.')); }
-    catch { notify(t('Liên kết bio đã sẵn sàng. Sao chép liên kết bên dưới.')); }
+    if (!bioShareUrl) { notify(t('Hãy lưu và xuất bản trang bio trước.')); return; }
+    try { await navigator.clipboard.writeText(bioShareUrl); notify(t('Đã sao chép liên kết trang bio.')); }
+    catch { notify(t('Hãy chọn và sao chép liên kết trong ô bên dưới.')); }
   };
-
-  return <div className={`app-shell ${sharedBio ? 'bio-public-shell' : ''}`} data-theme={sharedBio ? 'light' : appearance}>
-    {!sharedBio && <aside className={`sidebar ${mobileNav ? 'mobile-open' : ''}`}>
+  return <div className={`app-shell ${isPublicBio ? 'bio-public-shell' : ''}`} data-theme={isPublicBio ? 'light' : appearance}>
+    {!isPublicBio && <aside className={`sidebar ${mobileNav ? 'mobile-open' : ''}`}>
       <a className="logo" href="#dashboard" onClick={e => { e.preventDefault(); switchPage('dashboard'); }}><span className="logo-mark">D<span /></span><span>DT App<span className="logo-studio">{t('CÔNG CỤ SÁNG TẠO')}</span></span></a>
       <button className="create-button" onClick={newProject}><Plus size={17} /> {t("Tạo poster mới")}</button>
       <div className="nav-label">{t("DT APP")}</div>
@@ -471,8 +488,8 @@ export default function App() {
       <div className="sidebar-note"><span className="note-icon"><Sparkles size={20} /></span><h3>{t("Ý tưởng nhỏ.")}<br />{t("Ấn tượng lớn.")}</h3><p>{t("Mỗi sản phẩm đều xứng đáng có một diện mạo riêng.")}</p><button onClick={() => setModal('help')}>{t("Khám phá cách dùng")} <ArrowUpRight size={14} /></button><span className="note-decoration">✳</span></div>
       <div className="sidebar-bottom"><button onClick={() => { setServerForm(connection); setModal('settings'); }}><Settings2 size={17} /> {t("Cài đặt kết nối")}</button><button onClick={() => setModal('help')}><CircleHelp size={17} /> {t("Hướng dẫn sử dụng")}</button><div className="profile"><span>DT</span><div>{t("Không gian cá nhân")}<small>{t("Lưu trên thiết bị")}</small></div></div></div>
     </aside>}
-    <div className={`main-shell ${sharedBio ? 'bio-public-main' : ''}`}>
-      {!sharedBio && <header className="topbar"><div className="breadcrumbs"><button className="mobile-menu icon-button" onClick={() => setMobileNav(v => !v)} aria-label={t('Mở menu')}><Menu size={20} /></button><span>{t('DT App')}</span><ChevronRight size={14} /><strong>{page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Tạo trang bio') : t('Kênh bán hàng')}</strong></div><div className="top-actions"><span className="version-tag">{t('BẢN THỬ NGHIỆM 0.1')}</span><button className="language-toggle" onClick={() => setLanguage(v => v === 'vi' ? 'en' : 'vi')} aria-label={language === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}>{language === 'vi' ? 'EN' : 'VI'}</button><button className="icon-button" onClick={() => setAppearance(v => v === 'light' ? 'dark' : 'light')} aria-label={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')} title={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')}>{appearance === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="icon-button help-button" aria-label={t('Trợ giúp')} onClick={() => setModal('help')}><CircleHelp size={19} /></button><span className="avatar">D</span></div></header>}
+    <div className={`main-shell ${isPublicBio ? 'bio-public-main' : ''}`}>
+      {!isPublicBio && <header className="topbar"><div className="breadcrumbs"><button className="mobile-menu icon-button" onClick={() => setMobileNav(v => !v)} aria-label={t('Mở menu')}><Menu size={20} /></button><span>{t('DT App')}</span><ChevronRight size={14} /><strong>{page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Tạo trang bio') : t('Kênh bán hàng')}</strong></div><div className="top-actions"><span className="version-tag">{t('BẢN THỬ NGHIỆM 0.1')}</span><button className="language-toggle" onClick={() => setLanguage(v => v === 'vi' ? 'en' : 'vi')} aria-label={language === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}>{language === 'vi' ? 'EN' : 'VI'}</button><button className="icon-button" onClick={() => setAppearance(v => v === 'light' ? 'dark' : 'light')} aria-label={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')} title={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')}>{appearance === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="icon-button help-button" aria-label={t('Trợ giúp')} onClick={() => setModal('help')}><CircleHelp size={19} /></button><span className="avatar">D</span></div></header>}
       {page === 'dashboard' ? <main className="dashboard-page">
         <section className="dashboard-welcome">
           <div className="dashboard-welcome-copy"><div className="eyebrow"><span /> DT APP · {t('MỘT KHÔNG GIAN CHO SÁNG TẠO')}</div><h1>{t('Chào mừng đến DT App')}<span>.</span></h1><p>{t('Quản lý công cụ sáng tạo, thiết kế và cài đặt của bạn từ một nơi.')}</p><div className="dashboard-hero-actions"><button className="button primary" onClick={newProject}><Plus size={17} /> {t('Tạo poster mới')}</button><button className="button secondary" onClick={() => switchPage('projects')}><FolderHeart size={16} /> {t('Xem thiết kế đã lưu')}</button></div></div>
@@ -537,7 +554,7 @@ export default function App() {
           </section>
           <section className="template-panel panel"><div className="template-heading"><h2>{t("Chọn diện mạo")}</h2><span>{styles.length} {t('mẫu')}</span></div><div className="template-inner"><div className="right-label"><span className="step-number">03</span><h3>{t('Tỷ lệ thiết kế')}</h3></div><div className="ratio-grid">{ratios.map(r => <button key={r.id} className={poster.ratio === r.id ? 'selected' : ''} onClick={() => update({ ratio: r.id as RatioId })} title={`${t(r.name)} · ${r.width} × ${r.height}`}><span className="ratio-icon" style={{ width: r.width >= r.height ? 19 : 19 * r.width / r.height, height: r.height >= r.width ? 19 : 19 * r.height / r.width }} /><strong>{r.id}</strong></button>)}</div><div className="selected-ratio-name">{t(ratio.name)}<Check size={11} /></div><div className="section-divider" /><div className="right-label style-label"><span className="step-number">04</span><h3>{t('Phong cách của bạn')}</h3></div><div className="style-search"><Search size={13} /><input aria-label={t('Tìm phong cách')} placeholder={t('Tìm phong cách…')} value={styleFilter} onChange={e => setStyleFilter(e.target.value)} /></div><div className="template-grid">{styles.filter(s => `${t(s.name)} ${t(s.tag)} ${s.name} ${s.tag}`.toLocaleLowerCase(language).includes(styleFilter.toLocaleLowerCase(language))).map(style => <button className={`template-card ${poster.style === style.id ? 'selected' : ''}`} key={style.id} onClick={() => update({ style: style.id as StyleId, accent: style.accent })}><div className="template-preview"><PosterCanvas language={language} thumbnail poster={{ ...initialPoster, style: style.id, accent: style.accent }} />{poster.style === style.id && <span className="selected-check"><Check size={11} /></span>}</div><strong>{t(style.name)}</strong><small>{t(style.tag)}</small></button>)}</div>{styles.filter(s => `${t(s.name)} ${t(s.tag)} ${s.name} ${s.tag}`.toLocaleLowerCase(language).includes(styleFilter.toLocaleLowerCase(language))).length === 0 && <p className="muted">{t("Chưa có phong cách phù hợp. Thử từ khóa khác.")}</p>}<div className="section-divider" /><div className="color-heading"><h3>{t('Màu nhấn')}</h3><span>{poster.accent.toUpperCase()}</span></div><div className="swatches">{['#31564a', '#9b4439', '#806343', '#3e4fa0', '#82449b', '#e8c794'].map(color => <button key={color} aria-label={`${t('Màu')} ${color}`} title={color} className={poster.accent === color ? 'selected' : ''} style={{ backgroundColor: color }} onClick={() => update({ accent: color })}>{poster.accent === color && <Check size={12} color={color === '#e8c794' ? '#334b3b' : 'white'} />}</button>)}<label className="custom-color" title={t("Chọn màu tuỳ chỉnh")}><Plus size={13} /><input aria-label={t("Màu tuỳ chỉnh")} type="color" value={poster.accent} onChange={e => update({ accent: e.target.value })} /></label></div></div></section>
         </div><footer className="workspace-footer"><span><span className={`connection-dot ${serverStatus}`} /><button onClick={() => { setServerForm(connection); setModal('settings'); }}>{serverStatus === 'online' ? t('Đã kết nối server AI') : t('Kết nối server để dùng AI')} <ArrowUpRight size={11} /></button></span><span>{dirty ? t('Bản nháp tự lưu trên thiết bị') : t('Sẵn sàng sáng tạo')}<span className="footer-dot">·</span>{t("Được làm cho ý tưởng của bạn")} <span className="footer-spark">✳</span></span></footer>
-      </main> : page === 'projects' ? <main className="library-page"><div className="page-title"><div><div className="eyebrow">{t("GÓC SÁNG TẠO CỦA BẠN")}</div><h1>{t("Những ý tưởng đã thành hình")}<span>.</span></h1><p>{t("Thiết kế được lưu trên thiết bị và trình duyệt này.")}</p></div>{cloudUser && <button className="button secondary" onClick={() => refreshCloudProjects()} disabled={!!busy}><RotateCcw size={15} /> {t('Đồng bộ ngay')}</button>}<button className="button secondary" onClick={() => importRef.current?.click()}><Upload size={15} /> {t("Mở tệp thiết kế")}</button></div>{projects.length ? <div className="projects-grid">{projects.map(project => <article className="project-card" key={project.id}><button onClick={() => openProject(project)}><img src={project.thumbnail} alt={`Thiết kế ${project.name}`} /><h3>{project.name}</h3><p>{new Intl.DateTimeFormat(language === 'vi' ? 'vi-VN' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(project.savedAt)}</p></button><button className="icon-button delete-project" title={t("Xoá thiết kế đã lưu")} aria-label={`Xoá ${project.name}`} onClick={async () => { if (cloudClient && cloudUser) await deleteCloudProject(cloudClient, cloudUser, project.id); await deleteProject(project.id); setProjects(p => p.filter(v => v.id !== project.id)); if (projectId === project.id) setProjectId(null); notify(t("Đã xoá bản lưu.")); }}><Trash2 size={15} /></button></article>)}</div> : <div className="empty-state"><FolderHeart size={45} /><h2>{t("Mọi ý tưởng đều có một khởi đầu")}</h2><p>{t("Tạo poster đầu tiên và lưu lại để tiếp tục bất cứ lúc nào.")}</p><button className="button primary" onClick={() => switchPage('editor')}>{t("Bắt đầu thiết kế")} <ArrowRight size={15} /></button></div>}</main> : page === 'brand' ? <main className="brand-page"><div className="page-title"><div><div className="eyebrow">{t("NHẤT QUÁN TRONG TỪNG CHI TIẾT")}</div><h1>{t("Mang dấu ấn của bạn")}<span>.</span></h1><p>{t("Lưu tên và màu thương hiệu cho những thiết kế tiếp theo.")}</p></div></div><div className="brand-layout"><div className="panel brand-form"><label className="field-label" htmlFor="brand-name">{t("Tên thương hiệu")}</label><input id="brand-name" maxLength={32} value={brandName} onChange={e => setBrandName(e.target.value)} /><label className="field-label" htmlFor="brand-color">{t("Màu thương hiệu")}</label><div className="brand-color-field"><input id="brand-color" type="color" value={brandColor} onChange={e => setBrandColor(e.target.value)} /><span>{brandColor.toUpperCase()}</span></div><button className="button primary full" onClick={() => { try { localStorage.setItem('dt.brand', brandName); localStorage.setItem('dt.brandColor', brandColor); update({ brand: brandName, accent: brandColor }); notify(t("Đã lưu thương hiệu và áp dụng vào poster hiện tại.")); } catch (e) { notify(errorMessage(e), true); } }}><Check size={16} /> {t("Lưu & áp dụng")}</button></div><div className="brand-preview" style={{ backgroundColor: brandColor }}><span>{t("BỘ NHẬN DIỆN CỦA BẠN")}</span><h2>{brandName || t('Thương hiệu của bạn')}</h2><span>Every little detail tells a story.</span></div></div></main> : page === 'bio' ? (sharedBio ? <main className="bio-public-page"><article className="bio-public-card"><img src={import.meta.env.BASE_URL + 'tap-hoa-dt-logo.svg'} alt={t('Logo Tạp Hoá DT')} /><span className="bio-kicker">{t('CỬA HÀNG CHÍNH THỨC')}</span><h1>{sharedBio.name}</h1>{sharedBio.description && <p className="bio-public-description">{sharedBio.description}</p>}<BioLinks links={sharedBio.links} language={language} /><footer>{t('Thiết kế bằng')} <strong>DT App</strong></footer></article></main> : <main className="bio-builder-page"><div className="page-title"><div><div className="eyebrow"><span /> {t('LINK TRONG TIỂU SỬ')}</div><h1>{t('Trang bio cửa hàng')}<span>.</span></h1><p>{t('Tạo một trang liên kết từ các kênh bạn đã nhập, ưu tiên nơi mua sắm trước.')}</p></div><button className="button primary" onClick={copyBioLink}><Copy size={16} /> {t('Tạo & sao chép liên kết bio')}</button></div><div className="bio-builder-grid"><section className="panel bio-settings-panel"><div className="bio-panel-heading"><span className="bio-panel-icon"><Link2 size={18} /></span><div><h2>{t('Thông tin trang')}</h2><p>{t('Các thay đổi được lưu trên thiết bị này.')}</p></div></div><label className="field-label" htmlFor="bio-name">{t('Tên cửa hàng')}</label><input id="bio-name" maxLength={60} value={bioName} onChange={event => setBioName(event.target.value)} /><label className="field-label" htmlFor="bio-description">{t('Mô tả ngắn')}</label><textarea id="bio-description" maxLength={240} rows={3} value={bioDescription} onChange={event => setBioDescription(event.target.value)} /><div className="bio-priority-note"><ShoppingBag size={17} /><span><strong>{t('Thứ tự hiển thị')}</strong>{t('Shopee Shop và TikTok Shop ở đầu trang; Facebook, Threads và Instagram ở phía dưới.')}</span></div>{bioShareUrl && <div className="bio-share-field"><label className="field-label" htmlFor="bio-share-url">{t('Liên kết trang bio')}</label><input id="bio-share-url" type="url" readOnly value={bioShareUrl} onFocus={event => event.currentTarget.select()} /><small>{t('Đã tạo liên kết. Bạn có thể sao chép từ ô này để chia sẻ.')}</small></div>}<p className="bio-private-note">{t('Liên kết chia sẻ chứa tên, mô tả và URL các kênh trong địa chỉ trang; dữ liệu không được tải lên server.')}</p></section><section className="bio-preview-panel"><div className="bio-preview-heading"><div><div className="eyebrow">{t('XEM TRƯỚC TRANG CÔNG KHAI')}</div><h2>{t('Đây là trang khách sẽ mở')}</h2></div><span className="bio-live-badge"><span /> {t('XEM TRỰC TIẾP')}</span></div><div className="bio-preview-stage"><article className="bio-preview-card"><img src={import.meta.env.BASE_URL + 'tap-hoa-dt-logo.svg'} alt={t('Logo Tạp Hoá DT')} /><span className="bio-kicker">{t('CỬA HÀNG CHÍNH THỨC')}</span><h3>{bioName.trim() || t('Tạp Hoá DT')}</h3>{bioDescription.trim() && <p className="bio-public-description">{bioDescription}</p>}<BioLinks links={currentBioLinks} language={language} /><footer>{t('Thiết kế bằng')} <strong>DT App</strong></footer></article></div></section></div></main>) : <main className="channels-page"><div className="page-title"><div><div className="eyebrow"><span /> {t('KẾT NỐI CÁC KÊNH')}</div><h1>{t('Tạp Hoá DT ở mọi nơi')}<span>.</span></h1><p>{t('Mở nhanh gian hàng và trang mạng xã hội của bạn từ một nơi.')}</p></div><button className="button primary" onClick={() => switchPage('bio')}><Link2 size={16} /> {t('Tạo trang bio')}</button></div><section className="channels-brand-card"><div className="channels-brand-copy"><span className="brand-pill"><Sparkles size={14} /> {t('NHẬN DIỆN MỚI')}</span><h2>{t('Tạp Hoá DT')}</h2><p>{t('Trẻ trung, thân thiện và sẵn sàng đồng hành trên mọi kênh bán hàng.')}</p><a className="button secondary" href={import.meta.env.BASE_URL + 'tap-hoa-dt-logo.svg'} download="tap-hoa-dt-logo.svg"><ArrowDownToLine size={16} /> {t('Tải logo SVG')}</a></div><img src={import.meta.env.BASE_URL + 'tap-hoa-dt-logo.svg'} alt={t('Logo Tạp Hoá DT')} /></section><div className="channels-heading"><div><div className="eyebrow">{t('CÁC ĐIỂM ĐẾN CỦA BẠN')}</div><h2>{t('Kênh bán hàng')}</h2></div><p>{t('Lưu liên kết gian hàng hoặc trang cá nhân để mở nhanh.')}</p></div><section className="channels-grid">{socialChannels.map((channel, index) => { const Icon = channel.icon; return <article className={`channel-card channel-${channel.id}`} key={channel.id}><div className="channel-card-top"><span className="channel-icon"><Icon size={23} strokeWidth={2} /></span><span className="channel-index">0{index + 1}</span></div><h3>{channel.name}</h3><p>{t(channel.detail)}</p><label className="channel-url-label" htmlFor={`channel-url-${channel.id}`}>{t('Đường dẫn kênh')}</label><input id={`channel-url-${channel.id}`} type="url" value={channelUrls[channel.id] || ''} onChange={event => setChannelUrls(current => ({ ...current, [channel.id]: event.target.value }))} placeholder={defaultChannelUrls[channel.id]} /><div className="channel-actions"><button className="button secondary" onClick={() => saveChannelUrl(channel.id)}><Check size={15} /> {t('Lưu liên kết')}</button><a className="channel-open" href={channelDestination(channel.id)} target="_blank" rel="noopener noreferrer">{t('Mở kênh')} <ArrowUpRight size={15} /></a></div></article>; })}</section><p className="channels-note"><Link2 size={15} /> {t('Liên kết mặc định mở trang chính thức; bạn có thể thay bằng URL cửa hàng hoặc hồ sơ của mình.')}</p></main>}
+      </main> : page === 'projects' ? <main className="library-page"><div className="page-title"><div><div className="eyebrow">{t("GÓC SÁNG TẠO CỦA BẠN")}</div><h1>{t("Những ý tưởng đã thành hình")}<span>.</span></h1><p>{t("Thiết kế được lưu trên thiết bị và trình duyệt này.")}</p></div>{cloudUser && <button className="button secondary" onClick={() => refreshCloudProjects()} disabled={!!busy}><RotateCcw size={15} /> {t('Đồng bộ ngay')}</button>}<button className="button secondary" onClick={() => importRef.current?.click()}><Upload size={15} /> {t("Mở tệp thiết kế")}</button></div>{projects.length ? <div className="projects-grid">{projects.map(project => <article className="project-card" key={project.id}><button onClick={() => openProject(project)}><img src={project.thumbnail} alt={`Thiết kế ${project.name}`} /><h3>{project.name}</h3><p>{new Intl.DateTimeFormat(language === 'vi' ? 'vi-VN' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(project.savedAt)}</p></button><button className="icon-button delete-project" title={t("Xoá thiết kế đã lưu")} aria-label={`Xoá ${project.name}`} onClick={async () => { if (cloudClient && cloudUser) await deleteCloudProject(cloudClient, cloudUser, project.id); await deleteProject(project.id); setProjects(p => p.filter(v => v.id !== project.id)); if (projectId === project.id) setProjectId(null); notify(t("Đã xoá bản lưu.")); }}><Trash2 size={15} /></button></article>)}</div> : <div className="empty-state"><FolderHeart size={45} /><h2>{t("Mọi ý tưởng đều có một khởi đầu")}</h2><p>{t("Tạo poster đầu tiên và lưu lại để tiếp tục bất cứ lúc nào.")}</p><button className="button primary" onClick={() => switchPage('editor')}>{t("Bắt đầu thiết kế")} <ArrowRight size={15} /></button></div>}</main> : page === 'brand' ? <main className="brand-page"><div className="page-title"><div><div className="eyebrow">{t("NHẤT QUÁN TRONG TỪNG CHI TIẾT")}</div><h1>{t("Mang dấu ấn của bạn")}<span>.</span></h1><p>{t("Lưu tên và màu thương hiệu cho những thiết kế tiếp theo.")}</p></div></div><div className="brand-layout"><div className="panel brand-form"><label className="field-label" htmlFor="brand-name">{t("Tên thương hiệu")}</label><input id="brand-name" maxLength={32} value={brandName} onChange={e => setBrandName(e.target.value)} /><label className="field-label" htmlFor="brand-color">{t("Màu thương hiệu")}</label><div className="brand-color-field"><input id="brand-color" type="color" value={brandColor} onChange={e => setBrandColor(e.target.value)} /><span>{brandColor.toUpperCase()}</span></div><button className="button primary full" onClick={() => { try { localStorage.setItem('dt.brand', brandName); localStorage.setItem('dt.brandColor', brandColor); update({ brand: brandName, accent: brandColor }); notify(t("Đã lưu thương hiệu và áp dụng vào poster hiện tại.")); } catch (e) { notify(errorMessage(e), true); } }}><Check size={16} /> {t("Lưu & áp dụng")}</button></div><div className="brand-preview" style={{ backgroundColor: brandColor }}><span>{t("BỘ NHẬN DIỆN CỦA BẠN")}</span><h2>{brandName || t('Thương hiệu của bạn')}</h2><span>Every little detail tells a story.</span></div></div></main> : page === 'bio' ? (isPublicBio ? <main className="bio-public-page">{sharedBioLoading ? <div className="bio-public-card"><LoaderCircle className="spin" size={25} /><p>{t('Đang tải trang bio...')}</p></div> : sharedBioError ? <div className="bio-public-card"><span className="bio-kicker">DT APP</span><h1>{t('Không mở được trang bio')}</h1><p className="bio-public-description">{sharedBioError}</p><a className="button secondary" href={import.meta.env.BASE_URL}>{t('Về DT App')}</a></div> : sharedBio ? <article className="bio-public-card"><img src={import.meta.env.BASE_URL + 'tap-hoa-dt-logo.svg'} alt={t('Logo Tạp Hoá DT')} /><span className="bio-kicker">{t('CỬA HÀNG CHÍNH THỨC')}</span><h1>{sharedBio.name}</h1>{sharedBio.description && <p className="bio-public-description">{sharedBio.description}</p>}<BioLinks channels={sharedBio.channels} language={language} /><footer>{t('Thiết kế bằng')} <strong>DT App</strong></footer></article> : <div className="bio-public-card"><h1>{t('Không tìm thấy trang bio')}</h1></div>}</main> : <BioBuilderPage name={bioName} description={bioDescription} channels={channels} shareUrl={bioShareUrl} saving={!!busy} language={language} onNameChange={setBioName} onDescriptionChange={setBioDescription} onSave={() => { void saveBio(true); }} onCopy={() => { void copyBioLink(); }} onOpenChannels={() => switchPage('channels')} t={t} />) : <SalesChannelsPage channels={channels} onChange={setChannels} onSave={() => { void saveBio(false); }} onOpenBio={() => switchPage('bio')} busy={!!busy} t={t} />}
     </div>
     <input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" ref={fileRef} onChange={e => upload(e.target.files?.[0])} aria-label={t("Chọn ảnh sản phẩm")} />
     <input className="sr-only" type="file" accept=".json" ref={importRef} onChange={e => importProject(e.target.files?.[0])} aria-label={t("Mở tệp thiết kế")} />

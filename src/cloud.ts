@@ -1,8 +1,10 @@
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import type { Poster } from './model';
 import type { SavedProject } from './storage';
+import { sanitizeSalesChannels, type BioProfile } from './sales-channels';
 
 export interface CloudConfig { url: string; anonKey: string }
+export interface CloudBio extends BioProfile { shareId: string; isPublished: boolean }
 const CONFIG_KEY = 'dt.supabase';
 // Supabase publishable keys are intended for browser clients. RLS and the
 // private storage policies in the migration protect each user's poster data.
@@ -39,6 +41,53 @@ export function configuredClient(): SupabaseClient | null {
   const config = readCloudConfig();
   if (!config.url || !config.anonKey) return null;
   try { return configureCloud(config, false); } catch { return null; }
+}
+
+export async function readCloudBio(client: SupabaseClient, user: User): Promise<CloudBio | null> {
+  const { data, error } = await client.from('bio_pages').select('share_id,name,description,channels,is_published').eq('user_id', user.id).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    shareId: data.share_id,
+    name: typeof data.name === 'string' ? data.name.slice(0, 60) : 'Tạp Hoá DT',
+    description: typeof data.description === 'string' ? data.description.slice(0, 240) : '',
+    channels: sanitizeSalesChannels(data.channels),
+    isPublished: data.is_published === true,
+  };
+}
+
+export async function saveCloudBio(client: SupabaseClient, user: User, bio: BioProfile, previousShareId: string | null, publish: boolean): Promise<CloudBio> {
+  const shareId = previousShareId && UUID.test(previousShareId) ? previousShareId : crypto.randomUUID();
+  const { data, error } = await client.from('bio_pages').upsert({
+    user_id: user.id,
+    share_id: shareId,
+    name: bio.name.trim().slice(0, 60) || 'Tạp Hoá DT',
+    description: bio.description.trim().slice(0, 240),
+    channels: sanitizeSalesChannels(bio.channels),
+    is_published: publish,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id' }).select('share_id,name,description,channels,is_published').single();
+  if (error) throw error;
+  return {
+    shareId: data.share_id,
+    name: data.name,
+    description: data.description,
+    channels: sanitizeSalesChannels(data.channels),
+    isPublished: data.is_published === true,
+  };
+}
+
+export async function readPublicBio(client: SupabaseClient, shareId: string): Promise<BioProfile | null> {
+  if (!UUID.test(shareId)) return null;
+  const { data, error } = await client.rpc('get_public_bio', { p_share_id: shareId });
+  if (error) throw error;
+  if (!data || typeof data !== 'object') return null;
+  const result = data as Partial<BioProfile>;
+  return {
+    name: typeof result.name === 'string' ? result.name.slice(0, 60) : 'Tạp Hoá DT',
+    description: typeof result.description === 'string' ? result.description.slice(0, 240) : '',
+    channels: sanitizeSalesChannels(result.channels),
+  };
 }
 
 async function asBlob(value: string): Promise<Blob> {
