@@ -1,6 +1,6 @@
-# DT Poster Studio
+# DT App
 
-Ứng dụng thiết kế poster sản phẩm bằng Tiếng Việt và English, với giao diện sáng/tối, responsive và dùng chung trên web, Windows x64/ARM64 và macOS Intel/Apple Silicon. AI chạy qua máy chủ do chủ dự án quản lý.
+Không gian sáng tạo DT App gồm dashboard riêng và công cụ DT Poster Studio. Ứng dụng hỗ trợ Tiếng Việt và English, giao diện sáng/tối, responsive, chạy trên web, Windows x64/ARM64 và macOS Intel/Apple Silicon. API AI bên ngoài có thể tắt; khi tắt, gợi ý nội dung dùng câu chữ cục bộ. Xoá nền vẫn chạy bằng U²-Net trên server.
 
 ## Có trong bản 0.1
 

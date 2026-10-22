@@ -43,7 +43,7 @@ app.whenReady().then(() => {
     } catch { return new Response('Not found', { status: 404 }); }
   });
   const open = () => {
-    window = new BrowserWindow({ width: 1520, height: 980, minWidth: 900, minHeight: 700, title: 'DT Poster Studio', backgroundColor: '#f7f8f5', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
+    window = new BrowserWindow({ width: 1520, height: 980, minWidth: 900, minHeight: 700, title: 'DT App', backgroundColor: '#f7f8f5', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
     window.webContents.setWindowOpenHandler(({ url }) => {
       if (url.startsWith('https://')) void shell.openExternal(url);
       return { action: 'deny' };

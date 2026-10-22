@@ -2,7 +2,7 @@
   "name": "dt-poster-studio",
   "version": "0.1.0",
   "private": true,
-  "description": "DT Poster Studio — Thiết kế poster sản phẩm trên web và desktop",
+  "description": "DT App — Không gian sáng tạo và thiết kế poster trên web và desktop",
   "author": "DT Studio",
   "license": "UNLICENSED",
   "type": "module",
@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@fontsource/be-vietnam-pro": "^5.2.0",
+    "@fontsource/inter": "^5.3.0",
     "@fontsource/playfair-display": "^5.2.0",
     "@supabase/supabase-js": "^2.118.0",
     "lucide-react": "^0.468.0",
@@ -39,7 +40,7 @@
   },
   "build": {
     "appId": "com.dtstudio.poster",
-    "productName": "DT Poster Studio",
+    "productName": "DT App",
     "asar": true,
     "directories": {
       "output": "release"

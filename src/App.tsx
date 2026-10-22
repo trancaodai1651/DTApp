@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Copy, FolderHeart, ImagePlus, Layers3, LayoutGrid, Leaf, LoaderCircle, Menu, Minus, Moon, MousePointer2, Palette, Plus, Redo2, RotateCcw, Save, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Trash2, Undo2, Upload, WandSparkles, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Copy, FolderHeart, Home, ImagePlus, Layers3, LayoutGrid, Leaf, LoaderCircle, Menu, Minus, Moon, MousePointer2, Palette, Plus, Redo2, RotateCcw, Save, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Trash2, Undo2, Upload, WandSparkles, X } from 'lucide-react';
 import { initialPoster, styles, ratios, categories, type Poster, type StyleId, type RatioId } from './model';
 import { renderPoster, exportPoster, downloadBlob } from './renderer';
 import { readProduct, visionImage, backgroundImage } from './image-tools';
@@ -11,7 +11,7 @@ import { translate, type Language } from './i18n';
 import { configureCloud, configuredClient, deleteCloudProject, readCloudConfig, readCloudProjects, uploadCloudProject, type CloudConfig } from './cloud';
 import type { User } from '@supabase/supabase-js';
 
-type Page = 'editor' | 'projects' | 'brand';
+type Page = 'dashboard' | 'editor' | 'projects' | 'brand';
 type Modal = 'export' | 'settings' | 'help' | null;
 interface Suggestions { names: string[]; descriptions: string[]; source: string }
 const safeRead = (key: string, fallback = '') => { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } };
@@ -77,7 +77,7 @@ export default function App() {
   const setHistory = (next: Poster[]) => setTimeline(t => ({ ...t, history: next }));
   const setCursor = useCallback((next: number | ((value: number) => number)) => setTimeline(t => ({ ...t, cursor: typeof next === 'function' ? next(t.cursor) : next })), []);
   const poster = history[cursor];
-  const [page, setPage] = useState<Page>('editor');
+  const [page, setPage] = useState<Page>('dashboard');
   const [modal, setModal] = useState<Modal>(null);
   const closeModal = useCallback(() => setModal(null), []);
   const [mobileNav, setMobileNav] = useState(false);
@@ -94,6 +94,7 @@ export default function App() {
   const [connection, setConnection] = useState<Connection>(() => ({ url: safeRead('dt.server', 'http://127.0.0.1:8787'), token: (() => { try { return sessionStorage.getItem('dt.token') || ''; } catch { return ''; } })() }));
   const [serverForm, setServerForm] = useState(connection);
   const [serverStatus, setServerStatus] = useState<'unknown' | 'online' | 'offline'>('unknown');
+  const [useAiApi, setUseAiApi] = useState(() => safeRead('dt.useAiApi', '0') === '1');
   const [providerGuide, setProviderGuide] = useState<AIProviderId>(() => (safeRead('dt.aiProvider', 'openai') in aiProviders ? safeRead('dt.aiProvider', 'openai') as AIProviderId : 'openai'));
   const [aiProfiles, setAiProfiles] = useState<AIProfile[]>([]);
   const [aiProfilesReady, setAiProfilesReady] = useState(false);
@@ -116,6 +117,7 @@ export default function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const aiRequestRef = useRef<AbortController | null>(null);
   const notify = useCallback((text: string, error = false) => setToast({ text, error }), []);
   const update = useCallback((changes: Partial<Poster>) => {
     setTimeline(t => ({ history: [...t.history.slice(0, t.cursor + 1), { ...t.history[t.cursor], ...changes }].slice(-60), cursor: Math.min(t.cursor + 1, 59) }));
@@ -128,6 +130,9 @@ export default function App() {
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(null), 5000); return () => clearTimeout(timeout); }, [toast]);
   useEffect(() => { document.documentElement.lang = language; try { localStorage.setItem('dt.language', language); } catch {} }, [language]);
   useEffect(() => { document.documentElement.dataset.theme = appearance; try { localStorage.setItem('dt.theme', appearance); } catch {} }, [appearance]);
+  useEffect(() => {
+    document.title = page === 'dashboard' ? `${t('DT App')} · ${t('Bảng điều khiển')}` : `${t('DT Poster Studio')} · ${page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : t('Bộ thương hiệu')}`;
+  }, [page, language]);
   useEffect(() => {
     let mounted = true;
     loadAIProfiles().then(profiles => {
@@ -186,7 +191,7 @@ export default function App() {
         badge: poster.badge === initialPoster.badge ? '' : poster.badge,
         category: poster.category === initialPoster.category ? 'Sản phẩm khác' : poster.category,
       } : !poster.name.trim() && suggestedName ? { name: suggestedName } : {}) });
-      setSuggestions(null); notify(t("Đã thêm ảnh. Bạn có thể xoá nền và nhờ AI gợi ý nội dung."));
+      setSuggestions(null); notify(t(useAiApi ? "Đã thêm ảnh. Có thể xoá nền hoặc yêu cầu AI gợi ý nội dung." : "Đã thêm ảnh. Có thể xoá nền hoặc dùng gợi ý cục bộ."));
     } catch (e) { notify(errorMessage(e), true); }
     if (fileRef.current) fileRef.current.value = '';
   }
@@ -203,14 +208,14 @@ export default function App() {
   }
   async function suggest(useAI: boolean) {
     if (!useAI) { setSuggestions(localSuggestions(poster)); return; }
-    const controller = new AbortController(); abortRef.current = controller; setBusy(t("AI đang đọc ảnh và gợi ý nội dung…"));
+    const controller = new AbortController(); abortRef.current = controller; aiRequestRef.current = controller; setBusy(t("AI đang đọc ảnh và gợi ý nội dung…"));
     try {
       const credential = activeAIProfile ? { provider: activeAIProfile.provider, apiKey: activeAIProfile.apiKey, model: activeAIProfile.model } : undefined;
       const data = await apiRequest<Suggestions>(connection, 'suggestions', { image: await visionImage(poster.originalImage), name: poster.name, category: poster.category, description: poster.description, language }, controller.signal, credential);
       if (controller.signal.aborted) return;
       setSuggestions(data); if (!poster.name.trim() && data.names[0]) update({ name: data.names[0] }); setServerStatus('online');
     } catch (e) { if (!controller.signal.aborted) notify(errorMessage(e), true); }
-    finally { setBusy(''); abortRef.current = null; }
+    finally { setBusy(''); if (abortRef.current === controller) abortRef.current = null; if (aiRequestRef.current === controller) aiRequestRef.current = null; }
   }
   async function save() {
     try {
@@ -274,6 +279,16 @@ export default function App() {
       setAiProfileName(''); setAiProfileKey(''); setProviderGuide(profile.provider); setAiProfileModel(aiProviders[profile.provider].model); setAiVaultError('');
       notify(t('API đã được mã hoá và lưu trên thiết bị.'));
     } catch (error) { notify(errorMessage(error), true); }
+  }
+  function toggleAiApi() {
+    const next = !useAiApi;
+    setUseAiApi(next);
+    try { localStorage.setItem('dt.useAiApi', next ? '1' : '0'); } catch {}
+    if (!next) {
+      aiRequestRef.current?.abort();
+      setSuggestions(null);
+      notify(t('API AI đã tắt. Gợi ý cục bộ đang được dùng.'));
+    } else notify(t('API AI đã bật.'));
   }
   async function activateAIProfile(profile: AIProfile) {
     setActiveAIProfileId(profile.id); setProviderGuide(profile.provider);
@@ -361,10 +376,11 @@ export default function App() {
 
   return <div className="app-shell" data-theme={appearance}>
     <aside className={`sidebar ${mobileNav ? 'mobile-open' : ''}`}>
-      <a className="logo" href="#" onClick={e => { e.preventDefault(); switchPage('editor'); }}><span className="logo-mark">D<span /></span><span>poster<span className="logo-studio">STUDIO BY DT</span></span></a>
-      <button className="create-button" onClick={newProject}><Plus size={17} /> {t("Tạo thiết kế mới")}</button>
-      <div className="nav-label">{t("KHÔNG GIAN CỦA BẠN")}</div>
+      <a className="logo" href="#dashboard" onClick={e => { e.preventDefault(); switchPage('dashboard'); }}><span className="logo-mark">D<span /></span><span>DT App<span className="logo-studio">{t('CÔNG CỤ SÁNG TẠO')}</span></span></a>
+      <button className="create-button" onClick={newProject}><Plus size={17} /> {t("Tạo poster mới")}</button>
+      <div className="nav-label">{t("DT APP")}</div>
       <nav aria-label={t("Điều hướng chính")}>
+        <button className={page === 'dashboard' ? 'active' : ''} onClick={() => switchPage('dashboard')}><Home size={18} /> {t("Bảng điều khiển")}</button>
         <button className={page === 'editor' ? 'active' : ''} onClick={() => switchPage('editor')}><LayoutGrid size={18} /> {t("Xưởng thiết kế")} <span className="nav-dot" /></button>
         <button className={page === 'projects' ? 'active' : ''} onClick={() => switchPage('projects')}><FolderHeart size={18} /> {t('Thiết kế đã lưu')} {projects.length > 0 && <span className="count">{projects.length}</span>}</button>
         <button className={page === 'brand' ? 'active' : ''} onClick={() => switchPage('brand')}><Palette size={18} /> {t("Bộ thương hiệu")}</button>
@@ -373,8 +389,25 @@ export default function App() {
       <div className="sidebar-bottom"><button onClick={() => { setServerForm(connection); setModal('settings'); }}><Settings2 size={17} /> {t("Cài đặt kết nối")}</button><button onClick={() => setModal('help')}><CircleHelp size={17} /> {t("Hướng dẫn sử dụng")}</button><div className="profile"><span>DT</span><div>{t("Không gian cá nhân")}<small>{t("Lưu trên thiết bị")}</small></div></div></div>
     </aside>
     <div className="main-shell">
-      <header className="topbar"><div className="breadcrumbs"><button className="mobile-menu icon-button" onClick={() => setMobileNav(v => !v)} aria-label={t('Mở menu')}><Menu size={20} /></button><span>{t('Không gian sáng tạo')}</span><ChevronRight size={14} /><strong>{page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : t('Bộ thương hiệu')}</strong></div><div className="top-actions"><span className="version-tag">{t('BẢN THỬ NGHIỆM 0.1')}</span><button className="language-toggle" onClick={() => setLanguage(v => v === 'vi' ? 'en' : 'vi')} aria-label={language === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}>{language === 'vi' ? 'EN' : 'VI'}</button><button className="icon-button" onClick={() => setAppearance(v => v === 'light' ? 'dark' : 'light')} aria-label={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')} title={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')}>{appearance === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="icon-button help-button" aria-label={t('Trợ giúp')} onClick={() => setModal('help')}><CircleHelp size={19} /></button><span className="avatar">D</span></div></header>
-      {page === 'editor' ? <main className="editor-page">
+      <header className="topbar"><div className="breadcrumbs"><button className="mobile-menu icon-button" onClick={() => setMobileNav(v => !v)} aria-label={t('Mở menu')}><Menu size={20} /></button><span>{t('DT App')}</span><ChevronRight size={14} /><strong>{page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : t('Bộ thương hiệu')}</strong></div><div className="top-actions"><span className="version-tag">{t('BẢN THỬ NGHIỆM 0.1')}</span><button className="language-toggle" onClick={() => setLanguage(v => v === 'vi' ? 'en' : 'vi')} aria-label={language === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}>{language === 'vi' ? 'EN' : 'VI'}</button><button className="icon-button" onClick={() => setAppearance(v => v === 'light' ? 'dark' : 'light')} aria-label={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')} title={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')}>{appearance === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="icon-button help-button" aria-label={t('Trợ giúp')} onClick={() => setModal('help')}><CircleHelp size={19} /></button><span className="avatar">D</span></div></header>
+      {page === 'dashboard' ? <main className="dashboard-page">
+        <section className="dashboard-welcome">
+          <div className="dashboard-welcome-copy"><div className="eyebrow"><span /> DT APP · {t('MỘT KHÔNG GIAN CHO SÁNG TẠO')}</div><h1>{t('Chào mừng đến DT App')}<span>.</span></h1><p>{t('Quản lý công cụ sáng tạo, thiết kế và cài đặt của bạn từ một nơi.')}</p><div className="dashboard-hero-actions"><button className="button primary" onClick={newProject}><Plus size={17} /> {t('Tạo poster mới')}</button><button className="button secondary" onClick={() => switchPage('projects')}><FolderHeart size={16} /> {t('Xem thiết kế đã lưu')}</button></div></div>
+          <div className="dashboard-welcome-art"><div className="dashboard-sparkle sparkle-one">✳</div><div className="dashboard-sparkle sparkle-two">✦</div><div className="dashboard-preview"><PosterCanvas language={language} poster={poster} thumbnail /></div><div className="dashboard-preview-label"><span className="dashboard-preview-icon"><LayoutGrid size={16} /></span><span><strong>DT Poster Studio</strong><small>{t('Công cụ thiết kế poster')}</small></span><ArrowUpRight size={15} /></div></div>
+        </section>
+        <section className="dashboard-stats" aria-label={t('Tổng quan')}>
+          <article className="dashboard-stat"><span className="stat-icon"><FolderHeart size={18} /></span><span className="stat-label">{t('Thiết kế đã lưu')}</span><strong>{projects.length}</strong><small>{t('Trên thiết bị này')}</small></article>
+          <article className="dashboard-stat ai-status-stat"><span className="stat-icon"><Sparkles size={18} /></span><div className="ai-status-copy"><span className="stat-label">{t('API AI bên ngoài')}</span><strong>{useAiApi ? t('Đang bật') : t('Đã tắt')}</strong><small>{useAiApi ? t('Dùng theo API đang chọn') : t('Gợi ý chạy cục bộ')}</small></div><button type="button" className="dashboard-inline-toggle" aria-pressed={useAiApi} onClick={toggleAiApi}>{t(useAiApi ? 'Tắt API AI' : 'Bật API AI')}</button></article>
+          <article className="dashboard-stat"><span className="stat-icon"><ShieldCheck size={18} /></span><span className="stat-label">{t('API đã lưu')}</span><strong>{aiProfiles.length}</strong><small>{t('Lưu riêng trên thiết bị')}</small></article>
+        </section>
+        <div className="dashboard-section-heading"><div><div className="eyebrow">{t('DT APP')}</div><h2>{t('Ứng dụng của bạn')}</h2></div><p>{t('Chọn một không gian để tiếp tục.')}</p></div>
+        <section className="dashboard-app-grid">
+          <button className="dashboard-app-card featured" onClick={() => switchPage('editor')}><span className="dashboard-app-icon"><LayoutGrid size={21} /></span><small>01 · DT POSTER STUDIO</small><strong>{t('Thiết kế poster')}</strong><span className="dashboard-app-description">{t('Tạo poster sản phẩm với mẫu, tỷ lệ và phong cách có sẵn.')}</span><span className="dashboard-card-action">{t('Mở ứng dụng')} <ArrowRight size={15} /></span></button>
+          <button className="dashboard-app-card" onClick={() => switchPage('projects')}><span className="dashboard-app-icon warm"><FolderHeart size={21} /></span><small>02 · {t('THƯ VIỆN')}</small><strong>{t('Thiết kế đã lưu')}</strong><span className="dashboard-app-description">{t('Mở lại và tiếp tục chỉnh sửa thiết kế của bạn.')}</span><span className="dashboard-card-action">{t('Mở thư viện')} <ArrowRight size={15} /></span></button>
+          <button className="dashboard-app-card" onClick={() => switchPage('brand')}><span className="dashboard-app-icon violet"><Palette size={21} /></span><small>03 · {t('NHẬN DIỆN')}</small><strong>{t('Bộ thương hiệu')}</strong><span className="dashboard-app-description">{t('Lưu tên thương hiệu và màu cho poster tiếp theo.')}</span><span className="dashboard-card-action">{t('Mở bộ thương hiệu')} <ArrowRight size={15} /></span></button>
+          <button className="dashboard-app-card" onClick={() => { setServerForm(connection); setModal('settings'); }}><span className="dashboard-app-icon blue"><Settings2 size={21} /></span><small>04 · {t('CÀI ĐẶT')}</small><strong>{t('Cài đặt kết nối')}</strong><span className="dashboard-app-description">{t('Chọn chế độ gợi ý và quản lý các API đã lưu.')}</span><span className="dashboard-card-action">{t('Mở cài đặt')} <ArrowRight size={15} /></span></button>
+        </section>
+      </main> : page === 'editor' ? <main className="editor-page">
         <section className="page-title"><div><div className="eyebrow"><span /> {t("MỘT CHÚT SÁNG TẠO, MỖI NGÀY")}</div><h1>{t("Poster đẹp, bắt đầu từ đây")}<span>.</span></h1><p>{t("Thêm ảnh sản phẩm. Chọn phong cách. Kể câu chuyện của bạn.")}</p></div><div className="title-actions"><button className="button secondary" onClick={save}><Save size={16} /> {t("Lưu thiết kế")}</button><button className="button primary" onClick={() => setModal('export')}><ArrowDownToLine size={17} /> {t("Xuất poster")} <ArrowUpRight size={15} /></button></div></section>
         {draft && <div className="draft-banner"><span>{t("Bạn có một bản nháp từ lần trước.")}</span><button onClick={() => openProject(draft)}>{t("Tiếp tục chỉnh sửa")} <ArrowRight size={14} /></button><button className="icon-button" onClick={() => setDraft(null)} aria-label={t("Ẩn bản nháp")}><X size={15} /></button></div>}
         <div className="workspace">
@@ -388,14 +421,14 @@ export default function App() {
               <div className="image-file"><span className="file-thumb"><img src={poster.image} alt={t("Ảnh sản phẩm hiện tại")} /></span><div><strong title={t(poster.fileName)}>{t(poster.fileName)}</strong><small><span className="small-dot" />{poster.cutout ? t('Đã xoá nền') : t('Đã thêm vào thiết kế')}</small></div><button className="icon-button" aria-label={t("Thay ảnh")} title={t("Thay ảnh")} onClick={() => fileRef.current?.click()} disabled={!!busy}><Upload size={15} /></button></div>
               <button className={`remove-bg ${poster.cutout ? 'completed' : ''}`} onClick={cutout} disabled={!!busy || poster.cutout}><WandSparkles size={16} />{poster.cutout ? t('Đã xoá nền') : t('Xoá nền sản phẩm')}<span>AI</span></button>
               {poster.cutout && <button className="text-button restore" onClick={() => update({ image: poster.originalImage, cutout: false })}><RotateCcw size={12} /> {t("Khôi phục ảnh gốc")}</button>}
-              <p className="privacy-note"><ShieldCheck size={12} /> {t("Ảnh chỉ gửi tới server khi bạn dùng AI.")}</p>
+              <p className="privacy-note"><ShieldCheck size={12} /> {t("Ảnh chỉ gửi tới server khi xóa nền hoặc dùng gợi ý AI.")}</p>
               <div className="section-divider" />
               <div className="step-heading"><span>02</span><h2>{t("Kể về sản phẩm")}</h2></div>
               <label className="field-label" htmlFor="product-name">{t("Tên sản phẩm")} <span>{poster.name.length}/64</span></label><input id="product-name" placeholder={t("Ví dụ: Tinh dầu Thảo Mộc")} value={poster.name} maxLength={64} onChange={e => update({ name: e.target.value })} />
               <label className="field-label" htmlFor="category">{t("Nhóm sản phẩm")}</label><div className="select-wrap"><select id="category" value={poster.category} onChange={e => update({ category: e.target.value })}>{categories.map(c => <option key={c} value={c}>{t(c)}</option>)}</select><ChevronDown size={14} /></div>
-              <div className="label-row"><label className="field-label" htmlFor="description">{t("Mô tả ngắn")}</label><button className="ai-link" disabled={!!busy} onClick={() => suggest(true)}><Sparkles size={12} /> {t("AI gợi ý")}</button></div>
+              <div className="label-row"><label className="field-label" htmlFor="description">{t("Mô tả ngắn")}</label><button className="ai-link" disabled={!!busy} onClick={() => suggest(useAiApi)}><Sparkles size={12} /> {t(useAiApi ? "AI gợi ý" : "Gợi ý cục bộ")}</button></div>
               <textarea id="description" rows={3} maxLength={240} value={poster.description} placeholder={t("Một câu chuyện nhỏ về sản phẩm của bạn…")} onChange={e => update({ description: e.target.value })} />
-              <button className="suggest-button" onClick={() => suggest(true)} disabled={!!busy}><Sparkles size={15} /> {t("Gợi ý tên & mô tả từ ảnh")} <ArrowUpRight size={14} /></button>
+              <button className="suggest-button" onClick={() => suggest(useAiApi)} disabled={!!busy}><Sparkles size={15} /> {t(useAiApi ? "Gợi ý tên & mô tả từ ảnh" : "Gợi ý tên & mô tả (không dùng AI)")} <ArrowUpRight size={14} /></button>
               <button className="text-button local-suggest" onClick={() => suggest(false)}>{t("Tham khảo câu chữ theo nhóm sản phẩm")}</button>
               {suggestions && <div className="suggestions"><div className="suggestion-heading"><strong><Sparkles size={13} /> {suggestions.source === 'ai' ? t('Ý tưởng từ AI') : t('Gợi ý theo nhóm')}</strong><button className="icon-button" onClick={() => setSuggestions(null)} aria-label={t("Đóng gợi ý")}><X size={14} /></button></div>{suggestions.source !== 'ai' && <p>{t("Câu chữ tham khảo, chưa phân tích ảnh.")}</p>}<small>{t("TÊN SẢN PHẨM · NHẤN ĐỂ ÁP DỤNG")}</small>{suggestions.names.map((name, i) => <button key={i} className="name-suggestion" onClick={() => update({ name: name.slice(0, 64) })}>{name}<Plus size={12} /></button>)}<small>{t("MÔ TẢ · NHẤN ĐỂ ÁP DỤNG")}</small>{suggestions.descriptions.map((description, i) => <button key={i} className="description-suggestion" onClick={() => update({ description: description.slice(0, 240) })}>{description}<ArrowUpRight size={12} /></button>)}</div>}
             </div> : <div className="panel-content adjust-panel">
@@ -427,8 +460,9 @@ export default function App() {
     {busy && <div className="busy-pill" role="status"><LoaderCircle size={17} className="spin" /><span>{busy}</span>{abortRef.current && <button onClick={() => abortRef.current?.abort()}>{t("Huỷ")}</button>}</div>}
     {modal === 'export' && <ModalBox title={t("Sẵn sàng toả sáng.")} close={closeModal}><p className="modal-subtitle">{t("Xuất poster hoàn chỉnh, không có watermark.")}</p><div className="export-summary"><div className="export-thumb"><PosterCanvas language={language} poster={poster} thumbnail /></div><div><strong>{poster.name || t('Thiết kế của bạn')}</strong><p>{theme.name} · {poster.ratio}</p><small>{ratio.width * exportScale} × {ratio.height * exportScale} px</small></div></div><label className="field-label" htmlFor="export-format">{t("Định dạng")}</label><select id="export-format" value={exportFormat} onChange={e => setExportFormat(e.target.value as 'png' | 'jpeg')}><option value="png">{t("PNG — chi tiết rõ nét")}</option><option value="jpeg">{t("JPG — dung lượng nhẹ")}</option></select><label className="field-label" htmlFor="export-scale">{t("Độ phân giải")}</label><select id="export-scale" value={exportScale} onChange={e => setExportScale(+e.target.value)}><option value="1">1× · {ratio.width} × {ratio.height} px</option><option value="2">2× · {ratio.width * 2} × {ratio.height * 2} px</option></select><button className="button primary full export-action" disabled={!!busy} onClick={exportImage}><ArrowDownToLine size={17} /> {t("Tải poster xuống")}</button><div className="export-project-links"><button className="text-button" onClick={projectFile}><Copy size={13} /> {t("Tải tệp để chỉnh sửa sau")}</button><button className="text-button" onClick={() => importRef.current?.click()}><Upload size={13} /> {t("Mở tệp thiết kế")}</button></div></ModalBox>}
     {modal === 'settings' && <ModalBox title={t("Kết nối máy chủ AI")} close={closeModal}><p className="modal-subtitle">{t("Web và app dùng chung server để xoá nền, nhận diện ảnh và viết nội dung.")}</p><label className="field-label" htmlFor="server-url">{t("Địa chỉ server")}</label><input id="server-url" type="url" value={serverForm.url} onChange={e => setServerForm(s => ({ ...s, url: e.target.value }))} placeholder="https://poster-api.tenmien.vn" /><p className="field-help">{t("Để trống nếu web và API cùng tên miền. Server từ xa cần HTTPS.")}</p><label className="field-label" htmlFor="server-token">{t("Mã truy cập server (nếu có)")}</label><input id="server-token" type="password" value={serverForm.token} onChange={e => setServerForm(s => ({ ...s, token: e.target.value }))} placeholder={t("Mã do quản trị server cung cấp")} autoComplete="off" /><p className="field-help">{t("Mã chỉ giữ trong phiên này. API cá nhân được lưu mã hoá trên thiết bị.")}</p><section className="cloud-settings"><div className="provider-heading"><div><span className="eyebrow">SUPABASE CLOUD</span><h3>{t('Lưu thiết kế trên đám mây')}</h3></div><span className={`provider-badge ${cloudUser ? 'connected' : ''}`}>{cloudUser ? cloudUser.email : t('Chưa đăng nhập')}</span></div><p>{t('Nhập Project URL và publishable/anon key từ Supabase. Khóa này công khai; bảo vệ dữ liệu bằng đăng nhập và RLS, không dùng service_role key.')}</p><label className="field-label" htmlFor="supabase-url">Project URL</label><input id="supabase-url" type="url" value={cloudForm.url} onChange={e => setCloudForm(v => ({ ...v, url: e.target.value }))} placeholder="https://your-project.supabase.co" /><label className="field-label" htmlFor="supabase-anon">{t('Publishable key / anon key')}</label><input id="supabase-anon" type="text" value={cloudForm.anonKey} onChange={e => setCloudForm(v => ({ ...v, anonKey: e.target.value }))} placeholder="sb_publishable_…" autoComplete="off" /><div className="provider-actions"><button className="button secondary" onClick={connectCloud}><CheckCircle2 size={15} /> {t('Lưu cấu hình Supabase')}</button><a className="text-button" href="./poster_cloud.sql" target="_blank" rel="noreferrer">{t('Mở schema đồng bộ')} <ArrowUpRight size={13} /></a></div>{cloudClient && !cloudUser ? <><label className="field-label" htmlFor="cloud-email">Email</label><input id="cloud-email" type="email" value={cloudEmail} onChange={e => setCloudEmail(e.target.value)} autoComplete="email" /><label className="field-label" htmlFor="cloud-password">{t('Mật khẩu tài khoản Supabase')}</label><input id="cloud-password" type="password" value={cloudPassword} onChange={e => setCloudPassword(e.target.value)} autoComplete="current-password" /><div className="provider-actions"><button className="button primary" onClick={signInCloud} disabled={!!busy}>{t('Đăng nhập')}</button><button className="text-button" onClick={signUpCloud} disabled={!!busy}>{t('Tạo tài khoản mới')}</button></div></> : cloudUser ? <div className="provider-actions"><button className="button secondary" onClick={() => refreshCloudProjects()} disabled={!!busy}><RotateCcw size={14} /> {t('Đồng bộ ngay')}</button><button className="text-button" onClick={signOutCloud}>{t('Đăng xuất')}</button></div> : null}<p className="field-help">{t('Lưu thiết kế sẽ đồng bộ ảnh riêng tư và dữ liệu poster vào tài khoản Supabase đang đăng nhập. Mỗi tài khoản chỉ truy cập dữ liệu của mình.')}</p></section><section className="provider-help api-keys-panel">
-  <div className="provider-heading"><div><span className="eyebrow">{t('API CÁ NHÂN')}</span><h3>{t('Thêm và chuyển API')}</h3></div><span className="provider-badge">{activeAIProfile ? t('Đang dùng') : t('Chưa chọn API')}</span></div>
-  <p>{t('Lưu nhiều API riêng trên thiết bị này, chọn một API đang hoạt động rồi dùng AI gợi ý poster.')}</p>
+  <div className="provider-heading"><div><span className="eyebrow">{t('API CÁ NHÂN')}</span><h3>{t('Thêm và chuyển API')}</h3></div><span className={`provider-badge ${useAiApi ? 'connected' : ''}`}>{useAiApi ? t('API AI đang bật') : t('API AI đã tắt')}</span></div>
+  <div className="ai-mode-row"><div><strong>{t('Cho phép dùng API AI')}</strong><p>{t(useAiApi ? 'API AI đang bật. Chỉ gợi ý tên và mô tả từ ảnh mới gọi nhà cung cấp; xóa nền vẫn dùng U²-Net trên server.' : 'API AI đang tắt. Gợi ý tên và mô tả dùng thư viện cục bộ; ảnh, nội dung và khóa không gửi tới nhà cung cấp. Xóa nền vẫn dùng U²-Net trên server.')}</p></div><button type="button" className={`ai-mode-toggle ${useAiApi ? 'enabled' : ''}`} role="switch" aria-checked={useAiApi} onClick={toggleAiApi}>{useAiApi ? t('Đang bật') : t('Đang tắt')}</button></div>
+  <p>{t('Lưu nhiều API riêng trên thiết bị này; chỉ gửi API tới server khi công tắc ở trạng thái bật.')}</p>
   <label className="field-label" htmlFor="ai-provider">{t('Nhà cung cấp')}</label>
   <select id="ai-provider" value={providerGuide} onChange={event => { const value = event.target.value as AIProviderId; setProviderGuide(value); setAiProfileModel(aiProviders[value].model); try { localStorage.setItem('dt.aiProvider', value); } catch {} }}>
     {Object.entries(aiProviders).map(([id, provider]) => <option key={id} value={id}>{t(provider.label)}</option>)}
