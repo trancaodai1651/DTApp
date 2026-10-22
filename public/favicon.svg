@@ -1,1 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="#245347"/><path d="M17 17h13c23 0 23 30 0 30H17zm9 8v14h4c12 0 12-14 0-14z" fill="#faf6eb"/><circle cx="47" cy="17" r="5" fill="#df9870"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Tạp Hoá DT">
+  <rect width="64" height="64" rx="18" fill="#77B9F0"/>
+  <path d="M15 25h34l-3 26a5 5 0 0 1-5 4H23a5 5 0 0 1-5-4l-3-26Z" fill="#fffdf8"/>
+  <path d="M23 26v-7a9 9 0 0 1 18 0v7" fill="none" stroke="#375E91" stroke-linecap="round" stroke-width="4"/>
+  <circle cx="27" cy="36" r="2" fill="#33465f"/><circle cx="38" cy="36" r="2" fill="#33465f"/>
+  <path d="M29 43c2.5 2 5 2 7.5 0" fill="none" stroke="#F28C7E" stroke-linecap="round" stroke-width="2.5"/>
+  <path d="m12 22-5-6 2-7 7 3 2 7" fill="#FFD76E"/>
+  <circle cx="53" cy="14" r="4" fill="#F28C7E"/><circle cx="53" cy="51" r="3" fill="#AB94EC"/>
+</svg>
