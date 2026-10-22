@@ -377,7 +377,7 @@ const english: Record<string, string> = {
   "Số điện thoại hoặc liên kết Zalo": "Phone number or Zalo link",
   "Gọi điện": "Call",
   "Chưa có liên kết": "No link yet",
-  "Dùng nút mũi tên để sắp xếp kênh. Những kênh có đường dẫn hoặc số điện thoại mới xuất hiện trên trang bio.": "Use the arrow buttons to reorder channels. Only channels with a link or phone number appear on your bio page.",
+  "Dùng nút mũi tên để sắp xếp kênh. Chỉ link hoặc số bạn nhập mới hiện trên bio; nếu để trống, nút Mở kênh sẽ mở trang chính thức.": "Use the arrow buttons to reorder channels. Only links or numbers you enter appear on your bio; leaving a field blank keeps its Open channel button pointed to the official page.",
   "Lưu thay đổi": "Save changes",
   "GIAN HÀNG": "SHOP",
   "GỌI ĐIỆN / ZALO": "CALL / ZALO",

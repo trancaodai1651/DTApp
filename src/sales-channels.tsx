@@ -113,6 +113,10 @@ export function channelHref(channel: SalesChannel): string | null {
   catch { return null; }
 }
 
+export function channelOpenHref(channel: SalesChannel): string | null {
+  return channelHref(channel) || (channel.platform === 'custom' ? null : defaultDestinations[channel.platform]);
+}
+
 export function makeCustomChannel(name: string): SalesChannel {
   const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `custom-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   return { id, platform: 'custom', kind: 'custom', name: name.trim().slice(0, 60), destination: '' };
@@ -178,9 +182,9 @@ export function SalesChannelsPage({ channels, onChange, onSave, onOpenBio, busy,
         <p>{isZalo ? t('Nhập số điện thoại để hiện số trên bio, hoặc dán liên kết Zalo để chỉ hiện nút Zalo.') : isCustom ? t('Thêm đường dẫn cửa hàng, hồ sơ hoặc trang web của bạn.') : channel.kind === 'store' ? t('Gian hàng trực tuyến') : t('Trang và cộng đồng')}</p>
         <label className="channel-url-label" htmlFor={`channel-url-${channel.id}`}>{isZalo ? t('Số điện thoại hoặc liên kết Zalo') : t('Đường dẫn kênh')}</label>
         <input id={`channel-url-${channel.id}`} type="text" inputMode={isZalo ? 'text' : 'url'} value={channel.destination} onChange={event => update(channel.id, { destination: event.target.value })} placeholder={isZalo ? '0987654321 hoặc https://zalo.me/...' : 'https://...'} />
-        <div className="channel-actions"><button className="button secondary" disabled={busy} onClick={onSave}><Check size={15} /> {t('Lưu thay đổi')}</button>{channelHref(channel) ? <a className="channel-open" href={channelHref(channel)!} target={isZalo && isPhoneNumber(channel.destination) ? undefined : '_blank'} rel="noopener noreferrer">{isZalo && isPhoneNumber(channel.destination) ? t('Gọi điện') : t('Mở kênh')} <ArrowUpRight size={15} /></a> : <span className="channel-empty-hint">{t('Chưa có liên kết')}</span>}</div>
+        <div className="channel-actions"><button className="button secondary" disabled={busy} onClick={onSave}><Check size={15} /> {t('Lưu thay đổi')}</button>{channelOpenHref(channel) ? <a className="channel-open" href={channelOpenHref(channel)!} target={isZalo && isPhoneNumber(channel.destination) ? undefined : '_blank'} rel="noopener noreferrer">{isZalo && isPhoneNumber(channel.destination) ? t('Gọi điện') : t('Mở kênh')} <ArrowUpRight size={15} /></a> : <span className="channel-empty-hint">{t('Chưa có liên kết')}</span>}</div>
       </article>;
-    })}</section><p className="channels-note"><Link2 size={15} /> {t('Dùng nút mũi tên để sắp xếp kênh. Những kênh có đường dẫn hoặc số điện thoại mới xuất hiện trên trang bio.')}</p>
+    })}</section><p className="channels-note"><Link2 size={15} /> {t('Dùng nút mũi tên để sắp xếp kênh. Chỉ link hoặc số bạn nhập mới hiện trên bio; nếu để trống, nút Mở kênh sẽ mở trang chính thức.')}</p>
   </main>;
 }
 
