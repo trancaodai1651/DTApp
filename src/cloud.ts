@@ -43,6 +43,16 @@ export function configuredClient(): SupabaseClient | null {
   try { return configureCloud(config, false); } catch { return null; }
 }
 
+export async function ensureCloudUser(client: SupabaseClient): Promise<{ user: User; created: boolean }> {
+  const { data: { session }, error: sessionError } = await client.auth.getSession();
+  if (sessionError) throw sessionError;
+  if (session?.user) return { user: session.user, created: false };
+  const { data, error } = await client.auth.signInAnonymously();
+  if (error) throw error;
+  if (!data.user) throw new Error('Không tạo được phiên khách Supabase.');
+  return { user: data.user, created: true };
+}
+
 export async function readCloudBio(client: SupabaseClient, user: User): Promise<CloudBio | null> {
   const { data, error } = await client.from('bio_pages').select('share_id,name,description,channels,is_published').eq('user_id', user.id).maybeSingle();
   if (error) throw error;

@@ -8,7 +8,7 @@ import { saveProject, getProjects, deleteProject, type SavedProject } from './st
 import { apiRequest, connectionUrl, type Connection } from './api';
 import { loadAIProfiles, saveAIProfiles, type AIProfile, type AIProviderId } from './ai-profiles';
 import { translate, type Language } from './i18n';
-import { configureCloud, configuredClient, deleteCloudProject, readCloudBio, readCloudConfig, readCloudProjects, readPublicBio, saveCloudBio, uploadCloudProject, type CloudConfig } from './cloud';
+import { configureCloud, configuredClient, deleteCloudProject, ensureCloudUser, readCloudBio, readCloudConfig, readCloudProjects, readPublicBio, saveCloudBio, uploadCloudProject, type CloudConfig } from './cloud';
 import type { User } from '@supabase/supabase-js';
 import { BioBuilderPage, BioLinks, channelHref, createDefaultChannels, defaultDestinations, readSharedBio as readLegacySharedBio, readBioShareId, sanitizeSalesChannels, SalesChannelsPage, type BioProfile, type SalesChannel } from './sales-channels';
 
@@ -142,8 +142,6 @@ export default function App() {
   const importRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const aiRequestRef = useRef<AbortController | null>(null);
-  const bioDraftRef = useRef<BioProfile>({ name: bioName, description: bioDescription, channels });
-  bioDraftRef.current = { name: bioName, description: bioDescription, channels };
   const notify = useCallback((text: string, error = false) => setToast({ text, error }), []);
   const update = useCallback((changes: Partial<Poster>) => {
     setTimeline(t => ({ history: [...t.history.slice(0, t.cursor + 1), { ...t.history[t.cursor], ...changes }].slice(-60), cursor: Math.min(t.cursor + 1, 59) }));
@@ -207,16 +205,15 @@ export default function App() {
     if (!cloudClient || !cloudUser) { setBioCloudReady(false); return; }
     let mounted = true;
     setBioCloudReady(false);
-    readCloudBio(cloudClient, cloudUser).then(async remote => {
+    readCloudBio(cloudClient, cloudUser).then(remote => {
       if (!mounted) return;
       if (remote) {
         setBioName(remote.name); setBioDescription(remote.description); setChannels(remote.channels);
         setBioShareId(remote.shareId); setBioIsPublished(remote.isPublished);
         setBioShareUrl(remote.isPublished ? makeBioShareUrl(remote.shareId) : '');
-        return;
+      } else {
+        setBioShareId(''); setBioIsPublished(false); setBioShareUrl('');
       }
-      const initial = await saveCloudBio(cloudClient, cloudUser, bioDraftRef.current, null, false);
-      if (mounted) { setBioShareId(initial.shareId); setBioIsPublished(false); setBioShareUrl(''); }
     }).then(() => { if (mounted) setBioCloudReady(true); }).catch(error => { if (mounted) notify(`${t('Không tải được dữ liệu Supabase:')} ${errorMessage(error)}`, true); });
     return () => { mounted = false; };
   }, [cloudClient, cloudUser]);
@@ -408,7 +405,7 @@ export default function App() {
     catch { notify(t('Trình duyệt không cho phép sao chép. Hãy thêm các dòng hiển thị trong tài liệu AI_SETUP.md vào .env.'), true); }
   }
   function connectCloud() {
-    try { const client = configureCloud(cloudForm); setCloudClient(client); notify(t('Đã lưu cấu hình Supabase. Hãy đăng nhập để bật đồng bộ đám mây.')); }
+    try { const client = configureCloud(cloudForm); setCloudClient(client); notify(t('Đã lưu cấu hình Supabase. Bạn có thể lưu bio ngay.')); }
     catch (error) { notify(errorMessage(error), true); }
   }
   async function refreshCloudProjects(user = cloudUser) {
@@ -452,19 +449,30 @@ export default function App() {
   }
   const switchPage = (next: Page) => { setPage(next); setMobileNav(false); };
   const saveBio = async (publish = false) => {
-    if (!cloudClient) { setModal('settings'); notify(t('Hãy kết nối và đăng nhập Supabase để lưu dữ liệu.')); return; }
-    if (!cloudUser) { setModal('settings'); notify(t('Đăng nhập Supabase để lưu trang bio và kênh bán hàng.')); return; }
-    if (!bioCloudReady) { notify(t('Đang đồng bộ trang bio từ Supabase, hãy thử lại sau giây lát.')); return; }
+    if (!cloudClient) { setModal('settings'); notify(t('Hãy kết nối Supabase trước khi lưu.')); return; }
     const invalid = channels.find(channel => channel.destination && !channelHref(channel));
     if (invalid) { notify(`${t('Kiểm tra đường dẫn hoặc số điện thoại của kênh:')} ${invalid.name}`, true); return; }
+    if (cloudUser && !bioCloudReady) { notify(t('Đang đồng bộ trang bio từ Supabase, hãy thử lại sau giây lát.')); return; }
     setBusy(t('Đang lưu trang bio lên Supabase…'));
     try {
-      const saved = await saveCloudBio(cloudClient, cloudUser, { name: bioName, description: bioDescription, channels }, bioShareId || null, publish || bioIsPublished);
+      const { user, created } = await ensureCloudUser(cloudClient);
+      if (!cloudUser) setCloudUser(user);
+      if (!created && !bioCloudReady) {
+        notify(t('Đang tải dữ liệu bio từ Supabase. Hãy lưu lại sau giây lát.'));
+        return;
+      }
+      const saved = await saveCloudBio(cloudClient, user, { name: bioName, description: bioDescription, channels }, created ? null : bioShareId || null, publish || (!created && bioIsPublished));
       setBioName(saved.name); setBioDescription(saved.description); setChannels(saved.channels);
       setBioShareId(saved.shareId); setBioIsPublished(saved.isPublished);
+      setBioCloudReady(true);
       setBioShareUrl(saved.isPublished ? makeBioShareUrl(saved.shareId) : '');
       notify(saved.isPublished ? t('Đã lưu và cập nhật trang bio trên Supabase.') : t('Đã lưu các kênh vào Supabase.'));
-    } catch (error) { notify(`${t('Không lưu được trang bio:')} ${errorMessage(error)}`, true); }
+    } catch (error) {
+      const message = errorMessage(error);
+      notify(/anonymous.*disabled|disabled.*anonymous/i.test(message)
+        ? t('Supabase chưa bật đăng nhập khách. Hãy bật Anonymous sign-ins trong Authentication → Sign In / Providers.')
+        : `${t('Không lưu được trang bio:')} ${message}`, true);
+    }
     finally { setBusy(''); }
   };
   const copyBioLink = async () => {
@@ -562,8 +570,8 @@ export default function App() {
     {busy && <div className="busy-pill" role="status"><LoaderCircle size={17} className="spin" /><span>{busy}</span>{abortRef.current && <button onClick={() => abortRef.current?.abort()}>{t("Huỷ")}</button>}</div>}
     {modal === 'export' && <ModalBox title={t("Sẵn sàng toả sáng.")} close={closeModal}><p className="modal-subtitle">{t("Xuất poster hoàn chỉnh, không có watermark.")}</p><div className="export-summary"><div className="export-thumb"><PosterCanvas language={language} poster={poster} thumbnail /></div><div><strong>{poster.name || t('Thiết kế của bạn')}</strong><p>{theme.name} · {poster.ratio}</p><small>{ratio.width * exportScale} × {ratio.height * exportScale} px</small></div></div><label className="field-label" htmlFor="export-format">{t("Định dạng")}</label><select id="export-format" value={exportFormat} onChange={e => setExportFormat(e.target.value as 'png' | 'jpeg')}><option value="png">{t("PNG — chi tiết rõ nét")}</option><option value="jpeg">{t("JPG — dung lượng nhẹ")}</option></select><label className="field-label" htmlFor="export-scale">{t("Độ phân giải")}</label><select id="export-scale" value={exportScale} onChange={e => setExportScale(+e.target.value)}><option value="1">1× · {ratio.width} × {ratio.height} px</option><option value="2">2× · {ratio.width * 2} × {ratio.height * 2} px</option></select><button className="button primary full export-action" disabled={!!busy} onClick={exportImage}><ArrowDownToLine size={17} /> {t("Tải poster xuống")}</button><div className="export-project-links"><button className="text-button" onClick={projectFile}><Copy size={13} /> {t("Tải tệp để chỉnh sửa sau")}</button><button className="text-button" onClick={() => importRef.current?.click()}><Upload size={13} /> {t("Mở tệp thiết kế")}</button></div></ModalBox>}
     {modal === 'settings' && <ModalBox title={t("Kết nối máy chủ AI")} close={closeModal}><p className="modal-subtitle">{t("Web và app dùng chung server để xoá nền, nhận diện ảnh và viết nội dung.")}</p><label className="field-label" htmlFor="server-url">{t("Địa chỉ server")}</label><input id="server-url" type="url" value={serverForm.url} onChange={e => setServerForm(s => ({ ...s, url: e.target.value }))} placeholder="https://poster-api.tenmien.vn" /><p className="field-help">{t("Để trống nếu web và API cùng tên miền. Server từ xa cần HTTPS.")}</p><label className="field-label" htmlFor="server-token">{t("Mã truy cập server (nếu có)")}</label><input id="server-token" type="password" value={serverForm.token} onChange={e => setServerForm(s => ({ ...s, token: e.target.value }))} placeholder={t("Mã do quản trị server cung cấp")} autoComplete="off" /><p className="field-help">{t("Mã chỉ giữ trong phiên này. API cá nhân được lưu mã hoá trên thiết bị.")}</p><section className="cloud-settings">
-  <div className="provider-heading"><div><span className="eyebrow">SUPABASE CLOUD</span><h3>{t('Lưu thiết kế trên đám mây')}</h3></div><span className={`provider-badge ${cloudUser ? 'connected' : ''}`}>{cloudUser ? cloudUser.email : t('Chưa đăng nhập')}</span></div>
-  <p>{cloudClient ? t('Supabase đã được thiết lập sẵn cho DT App. Đăng nhập để lưu bio và kênh bán hàng.') : t('Hãy mở cài đặt nâng cao để thiết lập kết nối Supabase.')}</p>
+  <div className="provider-heading"><div><span className="eyebrow">SUPABASE CLOUD</span><h3>{t('Lưu thiết kế trên đám mây')}</h3></div><span className={`provider-badge ${cloudUser ? 'connected' : ''}`}>{cloudUser ? cloudUser.is_anonymous ? t('Tài khoản khách') : cloudUser.email : t('Tự động đăng nhập khi lưu')}</span></div>
+  <p>{cloudClient ? t('Supabase đã sẵn sàng. Khi bạn lưu bio, DT App sẽ tự tạo phiên khách.') : t('Hãy mở cài đặt nâng cao để thiết lập kết nối Supabase.')}</p>
   <details className="cloud-advanced">
     <summary>{t('Cài đặt kết nối Supabase nâng cao')}</summary>
     <div className="cloud-advanced-fields">
@@ -573,8 +581,9 @@ export default function App() {
       <div className="provider-actions"><button className="button secondary" onClick={connectCloud}><CheckCircle2 size={15} /> {t('Lưu cấu hình Supabase')}</button><a className="text-button" href="./poster_cloud.sql" target="_blank" rel="noreferrer">{t('Mở schema đồng bộ')} <ArrowUpRight size={13} /></a></div>
     </div>
   </details>
-  {cloudClient && !cloudUser ? <><label className="field-label" htmlFor="cloud-email">Email</label><input id="cloud-email" type="email" value={cloudEmail} onChange={e => setCloudEmail(e.target.value)} autoComplete="email" /><label className="field-label" htmlFor="cloud-password">{t('Mật khẩu tài khoản Supabase')}</label><input id="cloud-password" type="password" value={cloudPassword} onChange={e => setCloudPassword(e.target.value)} autoComplete="current-password" /><div className="provider-actions"><button className="button primary" onClick={signInCloud} disabled={!!busy}>{t('Đăng nhập')}</button><button className="text-button" onClick={signUpCloud} disabled={!!busy}>{t('Tạo tài khoản mới')}</button></div></> : cloudUser ? <div className="provider-actions"><button className="button secondary" onClick={() => refreshCloudProjects()} disabled={!!busy}><RotateCcw size={14} /> {t('Đồng bộ ngay')}</button><button className="text-button" onClick={signOutCloud}>{t('Đăng xuất')}</button></div> : null}
-  <p className="field-help">{t('Bio, kênh bán hàng và thiết kế được đồng bộ vào tài khoản Supabase đang đăng nhập.')}</p>
+  {cloudClient && !cloudUser ? <details className="cloud-login-optional"><summary>{t('Đăng nhập tài khoản hiện có (tuỳ chọn)')}</summary><div className="cloud-optional-login-fields"><label className="field-label" htmlFor="cloud-email">Email</label><input id="cloud-email" type="email" value={cloudEmail} onChange={e => setCloudEmail(e.target.value)} autoComplete="email" /><label className="field-label" htmlFor="cloud-password">{t('Mật khẩu tài khoản Supabase')}</label><input id="cloud-password" type="password" value={cloudPassword} onChange={e => setCloudPassword(e.target.value)} autoComplete="current-password" /><div className="provider-actions"><button className="button primary" onClick={signInCloud} disabled={!!busy}>{t('Đăng nhập')}</button><button className="text-button" onClick={signUpCloud} disabled={!!busy}>{t('Tạo tài khoản mới')}</button></div></div></details> : cloudUser ? <div className="provider-actions"><button className="button secondary" onClick={() => refreshCloudProjects()} disabled={!!busy}><RotateCcw size={14} /> {t('Đồng bộ ngay')}</button>{!cloudUser.is_anonymous && <button className="text-button" onClick={signOutCloud}>{t('Đăng xuất')}</button>}</div> : null}
+  <p className="field-help">{t('Bio, kênh bán hàng và thiết kế được đồng bộ vào phiên Supabase trên thiết bị này.')}</p>
+  {cloudClient && (!cloudUser || cloudUser.is_anonymous) && <p className="field-help">{t('Phiên khách được giữ trên thiết bị này. Xóa dữ liệu trình duyệt hoặc đổi thiết bị thì không thể khôi phục phiên và dữ liệu.')}</p>}
 </section><section className="provider-help api-keys-panel">
   <div className="provider-heading"><div><span className="eyebrow">{t('API CÁ NHÂN')}</span><h3>{t('Thêm và chuyển API')}</h3></div><span className={`provider-badge ${useAiApi ? 'connected' : ''}`}>{useAiApi ? t('API AI đang bật') : t('API AI đã tắt')}</span></div>
   <div className="ai-mode-row"><div><strong>{t('Cho phép dùng API AI')}</strong><p>{t(useAiApi ? 'API AI đang bật. Chỉ gợi ý tên và mô tả từ ảnh mới gọi nhà cung cấp; xóa nền vẫn dùng U²-Net trên server.' : 'API AI đang tắt. Gợi ý tên và mô tả dùng thư viện cục bộ; ảnh, nội dung và khóa không gửi tới nhà cung cấp. Xóa nền vẫn dùng U²-Net trên server.')}</p></div><button type="button" className={`ai-mode-toggle ${useAiApi ? 'enabled' : ''}`} role="switch" aria-checked={useAiApi} onClick={toggleAiApi}>{useAiApi ? t('Đang bật') : t('Đang tắt')}</button></div>

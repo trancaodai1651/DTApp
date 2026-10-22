@@ -11,10 +11,10 @@ Không gian sáng tạo DT App gồm dashboard riêng và công cụ DT Poster S
 - Trang hướng dẫn song ngữ chỉ cách lấy API key từ trang chính thức. Web mã hóa profile trong hồ sơ trình duyệt; ứng dụng Windows/macOS dùng `safeStorage` của hệ điều hành. Khóa cá nhân không đồng bộ qua Supabase.
 - Sửa nội dung, thương hiệu, giá, nhãn, lời kêu gọi hành động; thay màu; chỉnh vị trí/kích thước/góc xoay/bóng đổ ảnh; hoàn tác và làm lại.
 - Xuất PNG/JPG ở độ phân giải 1× hoặc 2×, lưu dự án trong IndexedDB và xuất/nhập tệp `.dtposter.json` để chuyển máy.
-- Đồng bộ poster và ảnh riêng tư vào Supabase Storage/Postgres theo tài khoản đăng nhập, có Row Level Security.
+- Đồng bộ bio, kênh bán hàng, poster và ảnh riêng tư vào Supabase Storage/Postgres qua tài khoản khách tự tạo hoặc tài khoản hiện có, có Row Level Security.
 - Giao diện song ngữ, giao diện sáng/tối, hoạt ảnh chuyển trạng thái và hỗ trợ tùy chọn giảm chuyển động của hệ điều hành.
 
-Đồng bộ Supabase cần project URL, publishable/anon key và áp dụng SQL trong `supabase/migrations/`. Mở mục **Supabase Cloud** trong Cài đặt để kết nối và đăng nhập.
+Đồng bộ Supabase cần project URL, publishable/anon key và áp dụng SQL trong `supabase/migrations/`. DT App tự tạo phiên khách khi lưu bio; đăng nhập email là tùy chọn.
 
 ## Chạy trên máy Windows hiện tại
 
@@ -68,7 +68,8 @@ GitHub Pages chỉ chứa frontend. Sau khi mở web, vào **Cài đặt kết n
 1. Tạo project Supabase ở khu vực gần người dùng.
 2. Chạy `supabase/migrations/20261022000000_poster_cloud.sql` trong Supabase SQL Editor.
 3. Trong **Settings → API Keys**, lấy Project URL và publishable key/anon key. Nhập hai giá trị trong mục **Supabase Cloud** của ứng dụng.
-4. Đăng ký hoặc đăng nhập email, sau đó lưu poster để đồng bộ. Tắt tự động xác nhận email hoặc cấu hình URL chuyển hướng về site Pages nếu muốn xác nhận email.
+4. Trong **Authentication → Sign In / Providers**, bật **Anonymous sign-ins**. DT App tự tạo phiên khách khi lưu bio; khách dùng RLS và chỉ truy cập dữ liệu gắn với ID riêng của họ. Đăng nhập email vẫn là tùy chọn.
+5. Phiên khách gắn với trình duyệt hoặc hồ sơ ứng dụng hiện tại. Nếu xóa dữ liệu trình duyệt hay đổi thiết bị, phiên và dữ liệu khách không thể khôi phục. Supabase khuyến nghị CAPTCHA để hạn chế tạo tài khoản tự động.
 
 Không bao giờ đưa `service_role` key vào frontend. Các bảng và bucket dùng RLS để mỗi tài khoản chỉ đọc và sửa dữ liệu của mình.
 
