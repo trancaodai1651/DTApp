@@ -30,3 +30,9 @@ Không gộp “đã viết mã” với “đã xác minh chạy thật”. M�
 - Bộ nhân vật GLB có giấy phép và clips nếu cần hình ảnh sản xuất.
 
 Thông tin không nhạy cảm có thể trả lời trong chat. Key/password phải nhập qua local `.env` hoặc secret manager của deployment; không ghi vào tài liệu, seed, log hay commit.
+
+## Checkpoint hiện tại — 2026-10-23
+
+Audit/kiến trúc đã commit `7cc5aa5`. Schema, typed client, importer, API, engine và kiểm thử foundation đã commit `be1cae8`. UI/3D, cấu hình container và runbooks đã có trong checkpoint tiếp theo. Kết quả cục bộ: 39 Vitest, 8 Playwright (API/Auth fixtures), 9 regression DTApp; typecheck/lint/build thành công.
+
+Các phase còn có cổng nghiệm thu hosted và những tính năng chưa triển khai được liệt kê cụ thể ở `docs/office/README.md` và `docs/office/VALIDATION.md`. Không xem các checkpoint này là hoàn thành toàn bộ master prompt. Bước bắt buộc tiếp theo là secrets/project staging + Docker Linux để xác nhận execution thực trước khi mở rộng chuỗi repository/development/deployment.

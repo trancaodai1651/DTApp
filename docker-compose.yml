@@ -1,0 +1,80 @@
+name: dt-virtual-office
+services:
+ web:
+  build:
+   context: .
+   dockerfile: infra/office/Dockerfile.web
+   args:
+    VITE_OFFICE_SUPABASE_URL: ${OFFICE_SUPABASE_URL:?Set Supabase URL in .env}
+    VITE_OFFICE_SUPABASE_ANON_KEY: ${OFFICE_SUPABASE_ANON_KEY:?Set publishable key in .env}
+    VITE_OFFICE_API_URL: ${VITE_OFFICE_API_URL:-}
+  ports: ["127.0.0.1:8080:80"]
+  depends_on: {api: {condition: service_healthy}}
+  networks: [frontend]
+  restart: unless-stopped
+ api:
+  build: {context: ., dockerfile: infra/office/Dockerfile.api}
+  environment:
+   OFFICE_SUPABASE_URL: ${OFFICE_SUPABASE_URL}
+   OFFICE_SUPABASE_ANON_KEY: ${OFFICE_SUPABASE_ANON_KEY}
+   OFFICE_ALLOWED_ORIGINS: ${OFFICE_ALLOWED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+   OFFICE_REDIS_URL: redis://redis:6379
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  healthcheck:
+   test: [CMD, node, -e, "fetch('http://127.0.0.1:8790/api/office/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+   interval: 20s
+   timeout: 5s
+   retries: 3
+  depends_on: {redis: {condition: service_healthy}}
+  networks: [frontend, core, egress]
+  restart: unless-stopped
+ worker:
+  build: {context: ., dockerfile: infra/office/Dockerfile.api}
+  command: [node, apps/office-api/dist/worker.js]
+  environment:
+   OFFICE_SUPABASE_URL: ${OFFICE_SUPABASE_URL}
+   OFFICE_SUPABASE_SERVICE_KEY: ${OFFICE_SUPABASE_SERVICE_KEY:?Set server secret}
+   OFFICE_OPENAI_KEY: ${OFFICE_OPENAI_KEY:-}
+   OFFICE_ANTHROPIC_KEY: ${OFFICE_ANTHROPIC_KEY:-}
+   OFFICE_REDIS_URL: redis://redis:6379
+   OFFICE_RUNNER_URL: http://runner:8081
+   OFFICE_RUNNER_TOKEN: ${OFFICE_RUNNER_TOKEN:?Set random token of at least 32 characters}
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  mem_limit: 768m
+  pids_limit: 128
+  depends_on: {redis: {condition: service_healthy}, runner: {condition: service_healthy}}
+  networks: [core, sandbox, egress]
+  restart: unless-stopped
+ redis:
+  image: redis:7-alpine
+  command: [redis-server, --appendonly, "yes", --maxmemory, 256mb, --maxmemory-policy, noeviction]
+  volumes: [redis-data:/data]
+  healthcheck: {test: [CMD, redis-cli, ping], interval: 10s, timeout: 3s, retries: 5}
+  networks: [core]
+  restart: unless-stopped
+ runner:
+  build: {context: ., dockerfile: infra/office/Dockerfile.runner}
+  environment: {OFFICE_RUNNER_TOKEN: "${OFFICE_RUNNER_TOKEN}"}
+  read_only: true
+  tmpfs: ["/tmp:size=96m,mode=1777"]
+  cap_drop: [ALL]
+  cap_add: [SETUID, SETGID, KILL]
+  security_opt: [no-new-privileges:true]
+  mem_limit: 256m
+  cpus: 1.0
+  pids_limit: 64
+  networks: [sandbox]
+  restart: unless-stopped
+volumes:
+ redis-data:
+networks:
+ frontend: {internal: true}
+ core: {internal: true}
+ sandbox: {internal: true}
+ egress: {}

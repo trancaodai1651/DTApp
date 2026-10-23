@@ -31,7 +31,7 @@ Kiểm thử thực thi:
 
 Chưa PASS: hosted Auth/RLS/Storage/Realtime, Redis/BullMQ runtime, provider gọi thật, runner container thực, chạy tools trên repository thực. Missing keys được kiểm tra trước reservation; không dựng kết quả thay thế. Unknown provider/tool outcome giữ reservation hoặc quarantine để con người đối chiếu.
 
-Commit checkpoint backend: ghi trong Git log với message `feat(office): add Supabase schema and durable agent execution foundation`.
+Commit checkpoint backend: `be1cae8` — `feat(office): add Supabase schema and durable agent execution foundation`.
 
 ## Checkpoint frontend 3D và hạ tầng
 
