@@ -10,8 +10,3 @@ public/ort/
 public/models/*.onnx
 server/models/*.onnx
 artifacts/
-.upstream/
-apps/office-api/dist/
-test-results/
-playwright-report/
-coverage/

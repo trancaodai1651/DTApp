@@ -1,7 +1,5 @@
 # DT App
 
-Module mới **AI Virtual Office 3D** có ở menu hoặc `/#office`: NestJS, Supabase PostgreSQL, agent tool loop có approval/ngân sách và cảnh Three.js. Xem [hướng dẫn tiếng Việt và trạng thái triển khai](docs/office/README.md), [kiến trúc](ARCHITECTURE.md), [kế hoạch](IMPLEMENTATION_PLAN.md) và [kết quả kiểm thử](docs/office/VALIDATION.md). Các hạng mục chưa chạy trên Supabase/provider/container thật chưa được nghiệm thu.
-
 Google sign-in, user roles, and multiple custom bio URLs are documented in [Google sign-in setup](docs/GOOGLE_LOGIN_SETUP.md). Configure the Supabase Google provider and redirect allowlist before deploying the access-gated build.
 
 Không gian sáng tạo DT App gồm dashboard riêng và công cụ DT Poster Studio. Ứng dụng hỗ trợ Tiếng Việt và English, giao diện sáng/tối, responsive, chạy trên web, Windows x64/ARM64 và macOS Intel/Apple Silicon. API AI bên ngoài có thể tắt; khi tắt, gợi ý nội dung dùng câu chữ cục bộ. Xoá nền vẫn chạy bằng U²-Net trên server.

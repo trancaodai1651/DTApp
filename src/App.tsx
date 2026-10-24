@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Copy, FolderHeart, Home, ImagePlus, Layers3, LayoutGrid, Leaf, Link2, LoaderCircle, LogOut, Menu, Minus, Moon, MousePointer2, Palette, Plus, Redo2, RotateCcw, Save, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Store, Sun, Trash2, Undo2, Upload, Users, WandSparkles, X } from 'lucide-react';
 import { initialPoster, styles, ratios, categories, type Poster, type StyleId, type RatioId } from './model';
 import { renderPoster, exportPoster, downloadBlob } from './renderer';
@@ -14,8 +14,7 @@ import { AccessDeniedPage, GoogleLoginPage, UsersPage } from './access';
 import { appBaseUrl, BioBuilderPage, BioLinks, BioPagesPage, channelHref, createDefaultChannels, defaultDestinations, readSharedBio as readLegacySharedBio, readBioShareId, readBioSlug, sanitizeSalesChannels, SalesChannelsPage, type BioProfile, type SalesChannel } from './sales-channels';
 import { isValidBioSlug, normalizeBioSlug } from './bio-slug.mjs';
 
-const OfficeApp = lazy(() => import('./office/OfficeApp'));
-type Page = 'dashboard' | 'editor' | 'projects' | 'brand' | 'channels' | 'bios' | 'bio' | 'users' | 'office';
+type Page = 'dashboard' | 'editor' | 'projects' | 'brand' | 'channels' | 'bios' | 'bio' | 'users';
 type Modal = 'export' | 'settings' | 'help' | null;
 interface Suggestions { names: string[]; descriptions: string[]; source: string }
 const safeRead = (key: string, fallback = '') => { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } };
@@ -96,7 +95,7 @@ export default function App() {
   const [sharedBioSlug, setSharedBioSlug] = useState<string | null>(() => readBioSlug());
   const [sharedBioLoading, setSharedBioLoading] = useState(false);
   const [sharedBioError, setSharedBioError] = useState('');
-  const [page, setPage] = useState<Page>(() => window.location.hash === '#office' ? 'office' : readBioShareId() || readBioSlug() || readLegacySharedBio() ? 'bio' : 'dashboard');
+  const [page, setPage] = useState<Page>(() => readBioShareId() || readBioSlug() || readLegacySharedBio() ? 'bio' : 'dashboard');
   const [channels, setChannels] = useState<SalesChannel[]>(readLocalSalesChannels);
   const [bioName, setBioName] = useState(() => safeRead('dt.bioName', safeRead('dt.brand', 'Tạp Hoá DT') || 'Tạp Hoá DT'));
   const [bioDescription, setBioDescription] = useState(() => safeRead('dt.bioDescription', safeRead('dt.language', 'vi') === 'en' ? 'Your favorite shop, selected products, and fresh offers every day.' : 'Gian hàng yêu thích, sản phẩm được chọn và ưu đãi mới mỗi ngày.'));
@@ -182,7 +181,6 @@ export default function App() {
   }, [channels]);
   useEffect(() => { try { localStorage.setItem('dt.bioShareId', bioShareId); localStorage.setItem('dt.bioIsPublished', bioIsPublished ? '1' : '0'); } catch {} }, [bioShareId, bioIsPublished]);
   useEffect(() => {
-    if (page === 'office') { document.title = 'DT App · Văn phòng AI 3D'; return; }
     const pageName = !isPublicBio && (!cloudUser || !appAccess?.isActive) ? t('Đăng nhập') : sharedBio ? `${sharedBio.name} · ${t('Trang bio')}` : sharedBioId || sharedBioSlug ? t('Trang bio') : page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Chỉnh sửa bio') : page === 'bios' ? t('Các trang bio') : page === 'users' ? t('Quản lý người dùng') : t('Kênh bán hàng');
     document.title = sharedBio || sharedBioId || sharedBioSlug ? pageName : `${t('DT App')} · ${pageName}`;
   }, [page, language, sharedBio, sharedBioId, sharedBioSlug, isPublicBio, cloudUser, appAccess?.isActive]);
@@ -532,7 +530,6 @@ export default function App() {
     try { await navigator.clipboard.writeText(bioShareUrl); notify(t('Đã sao chép liên kết trang bio.')); }
     catch { notify(t('Hãy chọn và sao chép liên kết trong ô bên dưới.')); }
   };
-  if (page === 'office' && !isPublicBio) return <Suspense fallback={<main className="access-screen"><p>Đang tải Văn phòng AI…</p></main>}><OfficeApp onBack={() => { window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`); switchPage('dashboard'); }} /></Suspense>;
   if (!isPublicBio) {
     if (authLoading) return <main className="access-screen"><section className="access-card access-loading"><LoaderCircle className="spin" size={28} /><p>{t('Đang xác minh tài khoản Google…')}</p></section></main>;
     if (!cloudUser || cloudUser.is_anonymous) return <GoogleLoginPage loading={!!busy} error={authError} onGoogle={() => { void startGoogleLogin(); }} language={language} appearance={appearance} onToggleLanguage={() => setLanguage(value => value === 'vi' ? 'en' : 'vi')} onToggleTheme={() => setAppearance(value => value === 'light' ? 'dark' : 'light')} t={t} />;
@@ -545,7 +542,6 @@ export default function App() {
       <div className="nav-label">{t("DT APP")}</div>
       <nav aria-label={t("Điều hướng chính")}>
         <button className={page === 'dashboard' ? 'active' : ''} onClick={() => switchPage('dashboard')}><Home size={18} /> {t("Bảng điều khiển")}</button>
-        <button onClick={() => { window.history.replaceState(null, '', '#office'); switchPage('office'); }}><Users size={18} /> Văn phòng AI 3D</button>
         <button className={page === 'editor' ? 'active' : ''} onClick={() => switchPage('editor')}><LayoutGrid size={18} /> {t("Xưởng thiết kế")} <span className="nav-dot" /></button>
         <button className={page === 'projects' ? 'active' : ''} onClick={() => switchPage('projects')}><FolderHeart size={18} /> {t('Thiết kế đã lưu')} {projects.length > 0 && <span className="count">{projects.length}</span>}</button>
         <button className={page === 'brand' ? 'active' : ''} onClick={() => switchPage('brand')}><Palette size={18} /> {t("Bộ thương hiệu")}</button>
@@ -570,7 +566,6 @@ export default function App() {
         </section>
         <div className="dashboard-section-heading"><div><div className="eyebrow">{t('DT APP')}</div><h2>{t('Ứng dụng của bạn')}</h2></div><p>{t('Chọn một không gian để tiếp tục.')}</p></div>
         <section className="dashboard-app-grid">
-          <button className="dashboard-app-card" onClick={() => { window.history.replaceState(null, '', '#office'); switchPage('office'); }}><span className="dashboard-app-icon violet"><Users size={21} /></span><small>AI VIRTUAL OFFICE</small><strong>Văn phòng AI 3D</strong><span className="dashboard-app-description">Điều hành nhân viên AI, dự án, nhiệm vụ và phê duyệt thực thi.</span><span className="dashboard-card-action">Mở văn phòng <ArrowRight size={15} /></span></button>
           <button className="dashboard-app-card featured" onClick={() => switchPage('editor')}><span className="dashboard-app-icon"><LayoutGrid size={21} /></span><small>01 · DT POSTER STUDIO</small><strong>{t('Thiết kế poster')}</strong><span className="dashboard-app-description">{t('Tạo poster sản phẩm với mẫu, tỷ lệ và phong cách có sẵn.')}</span><span className="dashboard-card-action">{t('Mở ứng dụng')} <ArrowRight size={15} /></span></button>
           <button className="dashboard-app-card" onClick={() => switchPage('projects')}><span className="dashboard-app-icon warm"><FolderHeart size={21} /></span><small>02 · {t('THƯ VIỆN')}</small><strong>{t('Thiết kế đã lưu')}</strong><span className="dashboard-app-description">{t('Mở lại và tiếp tục chỉnh sửa thiết kế của bạn.')}</span><span className="dashboard-card-action">{t('Mở thư viện')} <ArrowRight size={15} /></span></button>
           <button className="dashboard-app-card" onClick={() => switchPage('brand')}><span className="dashboard-app-icon violet"><Palette size={21} /></span><small>03 · {t('NHẬN DIỆN')}</small><strong>{t('Bộ thương hiệu')}</strong><span className="dashboard-app-description">{t('Lưu tên thương hiệu và màu cho poster tiếp theo.')}</span><span className="dashboard-card-action">{t('Mở bộ thương hiệu')} <ArrowRight size={15} /></span></button>
