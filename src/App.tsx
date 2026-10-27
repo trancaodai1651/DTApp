@@ -141,6 +141,8 @@ export default function App() {
   const [appAccess, setAppAccess] = useState<AppUserRecord | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
+  const [oauthPending, setOAuthPending] = useState(false);
+  const oauthStarting = useRef(false);
   const [exportFormat, setExportFormat] = useState<'png' | 'jpeg'>('png');
   const [exportScale, setExportScale] = useState(1);
   const [brandName, setBrandName] = useState(safeRead('dt.brand', poster.brand));
@@ -253,12 +255,12 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = window.dtPosterSecureStore?.onOAuthCallback(callbackUrl => {
       if (!cloudClient) return;
-      void applyDesktopOAuthCallback(cloudClient, callbackUrl).catch(error => setAuthError(errorMessage(error)));
+      void applyDesktopOAuthCallback(cloudClient, callbackUrl).catch(error => setAuthError(errorMessage(error))).finally(() => setOAuthPending(false));
     });
     let disposed = false;
     let stop: (() => void) | undefined;
     void subscribeDesktopOAuth(callbackUrl => {
-      if (!disposed && cloudClient) void applyDesktopOAuthCallback(cloudClient, callbackUrl).catch(error => setAuthError(errorMessage(error)));
+      if (!disposed && cloudClient) void applyDesktopOAuthCallback(cloudClient, callbackUrl).catch(error => setAuthError(errorMessage(error))).finally(() => { if (!disposed) setOAuthPending(false); });
     }).then(unsubscribeTauri => { if (disposed) unsubscribeTauri(); else stop = unsubscribeTauri; }).catch(error => setAuthError(errorMessage(error)));
     return () => { disposed = true; unsubscribe?.(); stop?.(); };
   }, [cloudClient]);
@@ -474,17 +476,20 @@ export default function App() {
     } catch (error) { notify(`${t('Không tải được dữ liệu Supabase:')} ${errorMessage(error)}`, true); }
     finally { setBusy(''); }
   }
-  async function startGoogleLogin() {
+  async function startGoogleLogin(emailHint?: string, retry = false) {
     if (!cloudClient) { setAuthError(t('Không thể kết nối Supabase. Hãy kiểm tra cấu hình triển khai.')); return; }
-    setAuthError(''); setBusy(t('Đang mở đăng nhập Google…'));
-    try { await signInWithGoogle(cloudClient); }
+    if (oauthStarting.current || (oauthPending && !retry)) return;
+    oauthStarting.current = true;
+    setAuthError(''); setBusy(t('Đang mở đăng nhập Google…')); setOAuthPending(true);
+    try { await signInWithGoogle(cloudClient, emailHint); }
     catch (error) {
+      setOAuthPending(false);
       const message = errorMessage(error);
       setAuthError(/manual.*link|identity.*link/i.test(message) ? t('Bật Manual identity linking trong cài đặt Authentication của Supabase để chuyển phiên khách cũ sang Google.')
         : /provider.*not enabled|unsupported provider/i.test(message) ? t('Google chưa được bật trong Supabase Authentication. Hãy cấu hình Google OAuth rồi thử lại.')
           : message);
     }
-    finally { setBusy(''); }
+    finally { oauthStarting.current = false; setBusy(''); }
   }
   async function recheckAccess() {
     if (!cloudClient || !cloudUser) return;
@@ -560,7 +565,7 @@ export default function App() {
   };
   if (!isPublicBio) {
     if (authLoading) return <main className="access-screen"><section className="access-card access-loading"><LoaderCircle className="spin" size={28} /><p>{t('Đang xác minh tài khoản Google…')}</p></section></main>;
-    if (!hasGoogleIdentity(cloudUser)) return <GoogleLoginPage loading={!!busy} error={authError} onGoogle={() => { void startGoogleLogin(); }} language={language} appearance={appearance} onToggleLanguage={() => setLanguage(value => value === 'vi' ? 'en' : 'vi')} onToggleTheme={() => setAppearance(value => value === 'light' ? 'dark' : 'light')} t={t} />;
+    if (!hasGoogleIdentity(cloudUser)) return <GoogleLoginPage loading={!!busy || oauthPending} error={authError} onGoogle={email => { void startGoogleLogin(email); }} onRetry={email => { void startGoogleLogin(email, true); }} language={language} appearance={appearance} onToggleLanguage={() => setLanguage(value => value === 'vi' ? 'en' : 'vi')} onToggleTheme={() => setAppearance(value => value === 'light' ? 'dark' : 'light')} t={t} />;
     if (!appAccess?.isActive) return <AccessDeniedPage email={cloudUser.email || ''} error={authError} loading={authLoading} onRetry={() => { void recheckAccess(); }} onSignOut={() => { void signOutCloud(); }} language={language} appearance={appearance} onToggleLanguage={() => setLanguage(value => value === 'vi' ? 'en' : 'vi')} onToggleTheme={() => setAppearance(value => value === 'light' ? 'dark' : 'light')} t={t} />;
   }
   return <div className={`app-shell ${isPublicBio ? 'bio-public-shell' : ''}`} data-theme={isPublicBio ? 'light' : appearance}>

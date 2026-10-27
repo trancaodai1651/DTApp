@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { authUserKey, hasGoogleIdentity } from '../src/auth-policy.mjs';
+import { authUserKey, googleOAuthQuery, hasGoogleIdentity } from '../src/auth-policy.mjs';
 
 test('requires a non-anonymous Google identity for every private app page', () => {
   assert.equal(hasGoogleIdentity(null), false);
@@ -14,4 +14,10 @@ test('routine token refresh keeps the same app identity while logout changes it'
   assert.equal(authUserKey(user), authUserKey({...user, updated_at:'later'}));
   assert.notEqual(authUserKey(user), authUserKey(null));
   assert.notEqual(authUserKey(user), authUserKey({...user, identities:[{provider:'email'}]}));
+});
+
+test('a supplied Google email opens that account without forcing a stuck chooser again', () => {
+  assert.deepEqual(googleOAuthQuery(), {prompt:'select_account'});
+  assert.deepEqual(googleOAuthQuery(' owner@example.test '), {login_hint:'owner@example.test'});
+  assert.throws(() => googleOAuthQuery('bad email'));
 });

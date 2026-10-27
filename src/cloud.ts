@@ -3,6 +3,7 @@ import type { Poster } from './model';
 import type { SavedProject } from './storage';
 import { sanitizeSalesChannels, type BioProfile } from './sales-channels';
 import { isDesktop, openDesktopOAuth } from './desktop';
+import { googleOAuthQuery } from './auth-policy.mjs';
 
 export interface CloudConfig { url: string; anonKey: string }
 export interface CloudBio extends BioProfile { id: string; slug: string; shareId: string; isPublished: boolean; updatedAt: string }
@@ -46,7 +47,7 @@ export function configuredClient(): SupabaseClient | null {
   try { return configureCloud(config, false); } catch { return null; }
 }
 
-export async function signInWithGoogle(client: SupabaseClient): Promise<void> {
+export async function signInWithGoogle(client: SupabaseClient, emailHint?: string): Promise<void> {
   const desktop = isDesktop() || Boolean(window.dtPosterSecureStore?.openOAuthURL);
   let redirectTo = 'dtapp://auth/callback';
   if (!desktop) {
@@ -57,7 +58,8 @@ export async function signInWithGoogle(client: SupabaseClient): Promise<void> {
     if (bioPath >= 0) redirect.pathname = redirect.pathname.slice(0, bioPath + 1);
     redirectTo = redirect.toString();
   }
-  const options = { redirectTo, skipBrowserRedirect: desktop, queryParams: { prompt: 'select_account' } };
+  const queryParams = googleOAuthQuery(emailHint);
+  const options = { redirectTo, skipBrowserRedirect: desktop, queryParams };
   const result = await client.auth.signInWithOAuth({ provider: 'google', options });
   const { data, error } = result;
   if (error) throw error;
