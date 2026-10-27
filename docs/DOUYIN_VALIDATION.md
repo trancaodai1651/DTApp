@@ -55,8 +55,11 @@ Video gốc có 11.054.017 byte, dài 68,6 giây. Mẫu SRT chỉ có lời tron
 - Đã xác minh live Supabase `external.google=true`, thêm và xác nhận redirect `dtapp://auth/callback` (giữ redirect web hiện có). Không đọc/ghi OAuth secret.
 - UI Windows đã hiển thị màn hình Google duy nhất, không còn nút vào Studio dạng khách. Đã mở được trang chọn tài khoản Google thật bằng OAuth PKCE; đang chờ người dùng hoàn tất bước tài khoản.
 - Bộ xử lý PyInstaller thực tế từ chối `snapshot` khi chưa đăng nhập và từ chối `save_channel` với token giả; không ghi bookmark; khóa phiên và thoát sạch đã qua. Bằng chứng `artifacts/google-auth/native-negative-results.json`.
-- Kiểm thử mới: Node 12/12, Python 14/14, TypeScript/build đã qua. Xác minh phiên Google/allowlist, khóa worker trước đăng nhập, giữ phiên qua token refresh.
+- Kiểm thử mới: Node 12/12, Python 15/15, TypeScript/build đã qua. Xác minh phiên Google/allowlist, khóa worker trước đăng nhập, giữ phiên qua token refresh.
 - Ảnh callback: `artifacts/google-auth/supabase-desktop-redirect.jpg`.
 - Báo cáo 0.2.0 ở trên là lịch sử; thông tin “UI đang khóa Windows” đã được thay bằng kiểm tra màn hình Google ở mục này. Luồng sau Google, quét cả kênh và macOS vẫn cần chứng cứ thực tế.
 
 - Khi thử thực tế, Google đứng ở trang chọn tài khoản trước khi trả về Supabase. Đã thêm email gợi ý (`login_hint`, không ép `select_account`) và chặn mở nhiều phiên OAuth đồng thời; cần người dùng thử lại luồng mới để xác nhận hết treo.
+
+- Kiểm thử đăng xuất khi đang chạy tác vụ phát hiện worker nuốt tín hiệu hủy và chờ mãi. Đã sửa để thoát đúng lane, giữ hàng đợi khóa trước lần đăng nhập sau; kiểm thử có timeout 2 giây đã qua.
+- CI bổ sung thực thi worker PyInstaller trên từng hệ điều hành, kiểm tra mặc định cần Google và không ghi bookmark khi chưa xác thực. macOS Universal còn kiểm tra `lipo` cho app/2 worker, chạy worker từ bên trong `.app` rồi xuất thêm ZIP portable.

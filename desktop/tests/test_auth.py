@@ -52,3 +52,36 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
                 engine.store.db.close()
+
+    async def test_logout_stops_running_work_and_keeps_pending_work_locked(self):
+        with tempfile.TemporaryDirectory() as path:
+            engine = Engine(path, require_google=True)
+            engine.auth = GoogleSession(lambda route, token: USER if route == "/auth/v1/user" else [{"email":USER["email"],"is_active":True}])
+            await engine.auth.verify("unit-test-session-token")
+            started, stopped = asyncio.Event(), asyncio.Event()
+            async def download(job):
+                started.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    stopped.set()
+            engine.download = download
+            job = engine.queue("download", {"videoId":"12345678901"})
+            engine.start_tasks()
+            try:
+                await asyncio.wait_for(started.wait(), 2)
+                await asyncio.wait_for(engine.lock_session(), 2)
+                self.assertTrue(stopped.is_set())
+                self.assertFalse(engine.auth.ready)
+                self.assertEqual(engine.store.get("jobs", job["jobId"])["state"], "interrupted")
+                pending = engine.queue("download", {"videoId":"12345678902"})
+                await asyncio.sleep(0.1)
+                self.assertEqual(engine.store.get("jobs", pending["jobId"])["state"], "queued")
+                self.assertNotIn("unit-test-session-token", str(engine.store.all("jobs")))
+            finally:
+                engine.closing = True
+                for task in engine.tasks:
+                    task.cancel()
+                await asyncio.gather(*engine.tasks, return_exceptions=True)
+                await engine.browser.close()
+                engine.store.db.close()

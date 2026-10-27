@@ -478,7 +478,7 @@ class Engine:
             except asyncio.CancelledError:
                 locked = self.require_google and not self.auth.ready
                 self.update_job(job, state="interrupted" if self.closing or locked else "cancelled", message="Tạm dừng: cần đăng nhập Google." if locked else "Đã dừng")
-                if self.closing:
+                if self.closing or locked or asyncio.current_task().cancelling():
                     raise
             except Exception as error:
                 self.update_job(job, state="blocked" if isinstance(error, GuestBlocked) else "error", message=str(error)[-2000:])
