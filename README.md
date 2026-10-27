@@ -75,27 +75,23 @@ GitHub Pages chỉ chứa frontend. Sau khi mở web, vào **Cài đặt kết n
 
 Không bao giờ đưa `service_role` key vào frontend. Các bảng và bucket dùng RLS để mỗi tài khoản chỉ đọc và sửa dữ liệu của mình.
 
-## Ứng dụng desktop
-
-```powershell
-npm run desktop
-# Build riêng trên Windows:
-npx electron-builder --win --x64 --publish never
-npx electron-builder --win --arm64 --publish never
-```
-
-Sau `npm run build`, các lệnh electron-builder đóng gói đúng giao diện web hiện tại. Kết quả ở `release/`: bộ cài NSIS `.exe` và `.zip`. Người dùng desktop chỉ cần bộ cài và kết nối đến server; không cần cài Node.js trên máy client.
-
-Trên máy macOS:
+## Ứng dụng desktop — Tauri v2
 
 ```text
 npm ci
+npm run desktop:setup
+npm run desktop
+# Windows x64:
+npm run pack:win
+# macOS Universal, sau khi có worker Intel + ARM64:
 npm run pack:mac
 ```
 
-Workflow `.github/workflows/desktop.yml` có 4 job cho Windows x64, Windows ARM64, macOS Intel và macOS ARM64, xuất artifact `.exe`/`.dmg`/`.zip`. Chạy thủ công hoặc đẩy tag `v*`. Phải build macOS trên runner/máy Mac. Các bản hiện chưa ký số hay notarize; cần chứng chỉ Windows/Apple của chủ dự án trước khi phát hành rộng rãi. Electron được chọn hỗ trợ Windows 10+ và macOS 13+; xác nhận lại yêu cầu tối thiểu khi nâng major Electron.
+Desktop đã chuyển sang Tauri v2. Bộ cài Windows NSIS ở `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`; bản macOS Universal được build trên Mac/CI, chứa cả worker Intel và Apple Silicon. Cần Rust, công cụ native của nền tảng và WebView2 trên Windows. Bản cài chưa ký số/notarize.
 
-Client desktop được sandbox, tắt Node trong renderer, chặn điều hướng ngoài, chỉ truy cập server qua HTTP loopback/HTTPS. Không đóng gói API key hoặc mô hình AI trong client.
+**Douyin Studio** lưu kênh tham khảo, tải video lẻ/kênh/theo lịch ngày–tuần–tháng, theo dõi video mới khi app chạy và lồng tiếng OmniVoice. Bắt buộc đăng nhập Google đã được cấp quyền DT App; Douyin vẫn dùng phiên khách, không cần tài khoản Douyin. Khả năng lấy danh sách kênh phụ thuộc giới hạn phiên khách của Douyin; xem [hướng dẫn và giới hạn thực tế](docs/DOUYIN_STUDIO.md), [báo cáo kiểm chứng](docs/DOUYIN_VALIDATION.md).
+
+OmniVoice cài riêng khi cần, không nhúng PyTorch/model vào bộ cài. Mẫu `.env.example` cho phép origin Tauri cho các công cụ poster gọi server hiện có. Dữ liệu Electron cũ có thể chuyển bằng xuất/nhập JSON; khóa API cần nhập lại.
 
 ## Kiểm tra
 
@@ -112,4 +108,4 @@ Kiểm tra UI gồm đổi tên, mẫu, tỷ lệ, lưu/mở dự án, xoá nề
 
 - Kiến trúc và hướng mở rộng: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - Giấy phép thành phần và mô hình: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages) phục vụ web tĩnh; [Electron](https://github.com/electron/electron) hỗ trợ x64 và ARM64; phần thị giác dựa trên [OpenAI Responses image inputs](https://developers.openai.com/api/docs/guides/images-vision?api-mode=responses).
+- [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages) phục vụ web tĩnh; [Tauri v2](https://v2.tauri.app/) dùng WebView của hệ điều hành; phần thị giác dựa trên [OpenAI Responses image inputs](https://developers.openai.com/api/docs/guides/images-vision?api-mode=responses).

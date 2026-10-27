@@ -33,6 +33,11 @@ test('access token and origin allowlist protect both AI routes', async () => {
     assert.equal(preflight.status, 204); assert.equal(preflight.headers.get('access-control-allow-origin'), 'app://dt');
     const pagesPreflight = await fetch(`${base}/api/suggestions`, { method: 'OPTIONS', headers: { Origin: 'https://trancaodai1651.github.io' } });
     assert.equal(pagesPreflight.status, 204); assert.equal(pagesPreflight.headers.get('access-control-allow-origin'), 'https://trancaodai1651.github.io');
+    for (const origin of ['tauri://localhost', 'http://tauri.localhost', 'http://127.0.0.1:1420']) {
+      const tauriPreflight = await fetch(`${base}/api/suggestions`, { method: 'OPTIONS', headers: { Origin: origin } });
+      assert.equal(tauriPreflight.status, 204);
+      assert.equal(tauriPreflight.headers.get('access-control-allow-origin'), origin);
+    }
   });
 });
 test('missing provider key produces an actionable error without fabricated AI content', async () => {

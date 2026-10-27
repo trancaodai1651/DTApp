@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient, type User } from '@supabase/supabase
 import type { Poster } from './model';
 import type { SavedProject } from './storage';
 import { sanitizeSalesChannels, type BioProfile } from './sales-channels';
+import { isDesktop, openDesktopOAuth } from './desktop';
 
 export interface CloudConfig { url: string; anonKey: string }
 export interface CloudBio extends BioProfile { id: string; slug: string; shareId: string; isPublished: boolean; updatedAt: string }
@@ -34,7 +35,7 @@ export function configureCloud(config: CloudConfig, persist = true): SupabaseCli
   const identity = `${normalized.url}|${normalized.anonKey}`;
   if (activeClient && activeConfig === identity) return activeClient;
   activeConfig = identity;
-  activeClient = createClient(normalized.url, normalized.anonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: 'dt-poster-supabase-auth' } });
+  activeClient = createClient(normalized.url, normalized.anonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: isDesktop() ? 'pkce' : 'implicit', storageKey: 'dt-poster-supabase-auth' } });
   if (persist) localStorage.setItem(CONFIG_KEY, JSON.stringify(normalized));
   return activeClient;
 }
@@ -46,7 +47,7 @@ export function configuredClient(): SupabaseClient | null {
 }
 
 export async function signInWithGoogle(client: SupabaseClient): Promise<void> {
-  const desktop = Boolean(window.dtPosterSecureStore?.openOAuthURL);
+  const desktop = isDesktop() || Boolean(window.dtPosterSecureStore?.openOAuthURL);
   let redirectTo = 'dtapp://auth/callback';
   if (!desktop) {
     const redirect = new URL(window.location.href);
@@ -56,14 +57,14 @@ export async function signInWithGoogle(client: SupabaseClient): Promise<void> {
     if (bioPath >= 0) redirect.pathname = redirect.pathname.slice(0, bioPath + 1);
     redirectTo = redirect.toString();
   }
-  const { data: current } = await client.auth.getUser();
   const options = { redirectTo, skipBrowserRedirect: desktop, queryParams: { prompt: 'select_account' } };
-  const result = current.user?.is_anonymous
-    ? await client.auth.linkIdentity({ provider: 'google', options })
-    : await client.auth.signInWithOAuth({ provider: 'google', options });
+  const result = await client.auth.signInWithOAuth({ provider: 'google', options });
   const { data, error } = result;
   if (error) throw error;
-  if (desktop && data.url) await window.dtPosterSecureStore!.openOAuthURL(data.url);
+  if (desktop && data.url) {
+    if (isDesktop()) await openDesktopOAuth(data.url);
+    else await window.dtPosterSecureStore!.openOAuthURL(data.url);
+  }
 }
 
 export async function applyDesktopOAuthCallback(client: SupabaseClient, callbackUrl: string): Promise<void> {

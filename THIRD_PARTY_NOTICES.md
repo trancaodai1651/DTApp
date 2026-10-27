@@ -6,8 +6,14 @@ DT Poster Studio source is private, with no distribution license granted by this
 | --- | --- | --- |
 | React / React DOM | MIT | https://github.com/facebook/react |
 | Vite | MIT | https://github.com/vitejs/vite |
-| Electron | MIT plus bundled Chromium/Node notices | https://github.com/electron/electron |
-| electron-builder | MIT | https://github.com/electron-userland/electron-builder |
+| Tauri v2 and plugins | MIT OR Apache-2.0 | https://github.com/tauri-apps/tauri |
+| Python | PSF-2.0 | https://www.python.org/ |
+| Playwright and driver | Apache-2.0; bundled Node retains its notices | https://github.com/microsoft/playwright-python |
+| Chromium (downloaded separately) | BSD and third-party notices | https://www.chromium.org/ |
+| PyInstaller | GPL-2.0 with bootloader distribution exception | https://pyinstaller.org/ |
+| imageio-ffmpeg | BSD-2-Clause; bundled FFmpeg has separate terms | https://github.com/imageio/imageio-ffmpeg |
+| FFmpeg (imageio binary) | GPL/LGPL and codec notices as built; retain source availability | https://ffmpeg.org/legal.html |
+| OmniVoice (optional runtime) | Apache-2.0; model and dependencies retain their own terms | https://github.com/k2-fsa/OmniVoice |
 | Express | MIT | https://github.com/expressjs/express |
 | ONNX Runtime | MIT | https://github.com/microsoft/onnxruntime |
 | sharp | Apache-2.0; bundled libvips and codecs retain their licenses | https://github.com/lovell/sharp |
@@ -19,4 +25,4 @@ DT Poster Studio source is private, with no distribution license granted by this
 
 U²-Net: Xuebin Qin, Zichen Zhang, Chenyang Huang, Masood Dehghan, Osmar R. Zaiane and Martin Jagersand, “U²-Net: Going Deeper with Nested U-Structure for Salient Object Detection,” Pattern Recognition 106 (2020). Model `u2net.onnx` comes from the rembg v0.0.0 release. Its upstream MD5 `60024c5c889badc19c04ad937298a77b` is checked at installation. This checksum establishes matching content with the upstream release; it is not an independent security audit.
 
-Full dependency licenses remain in installed package directories. Electron installers include Electron/Chromium license files. Retain this notice and the model/font license files under `licenses/` with distributions containing their assets. The product bottle illustration in `public/sample-product.svg` was created for this project; it is fictional demo branding.
+Full dependency licenses remain in installed package directories. Tauri worker resources retain Python, Playwright, Node and imageio package license files. Chromium is installed separately with its own notices. OmniVoice/PyTorch are installed on demand. FFmpeg binary licensing and corresponding source obligations must be reviewed for redistribution; include the exact binary version/build source for each release. Retain this notice and the model/font license files under `licenses/` with distributions containing their assets. The product bottle illustration in `public/sample-product.svg` was created for this project; it is fictional demo branding.

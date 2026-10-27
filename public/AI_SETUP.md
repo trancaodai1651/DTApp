@@ -10,7 +10,7 @@ DT Poster Studio hỗ trợ API cá nhân từ OpenAI (ChatGPT), Gemini, Claude 
 4. Nhấn **Lưu API trên thiết bị**. Thêm nhiều cấu hình nếu cần, rồi chọn **Dùng API này** để chuyển provider hoặc tài khoản.
 5. Kết nối tới server AI của bạn bằng URL HTTPS. Khi yêu cầu gợi ý tên/mô tả từ ảnh, app gửi API key, ảnh và thông tin sản phẩm đến server đã cấu hình để server gọi đúng nhà cung cấp.
 
-API cá nhân được mã hóa và lưu cục bộ: Web dùng kho mã hóa trong hồ sơ trình duyệt hiện tại; Windows/macOS desktop dùng Electron `safeStorage` dựa trên kho bảo mật hệ điều hành. Cấu hình web không đồng bộ qua Supabase hay trình duyệt khác. API key không được lưu trong GitHub Pages, Supabase hoặc database của server. Server chỉ nhận key trong RAM cho request đó và không ghi body request vào log. Xóa cấu hình trong app để bỏ key khỏi thiết bị.
+API cá nhân được mã hóa và lưu cục bộ: Web dùng kho mã hóa trong hồ sơ trình duyệt hiện tại; Tauri desktop dùng Web Crypto/IndexedDB trong profile WebView riêng. Cấu hình web không đồng bộ qua Supabase hay trình duyệt khác. API key không được lưu trong GitHub Pages, Supabase hoặc database của server. Server chỉ nhận key trong RAM cho request đó và không ghi body request vào log. Xóa cấu hình trong app để bỏ key khỏi thiết bị.
 
 Chỉ kết nối tới server bạn tin cậy: server sẽ nhận key cùng ảnh trong lúc xử lý và chuyển ảnh/key tới provider đã chọn. Không nhập API key vào server công cộng không thuộc quyền kiểm soát của bạn. Tính năng xóa nền dùng U²-Net trên server và không cần API key nhà cung cấp.
 
@@ -47,7 +47,7 @@ DT Poster Studio supports personal API keys from OpenAI (ChatGPT), Gemini, Claud
 
 Create a provider key, then open **Connection Settings → Personal API Keys**. Choose a provider, name the profile, paste the key, and save it on this device. The model is prefilled and can be changed. Add multiple profiles and select **Use this API** to switch between providers or accounts. Connect the app to your own AI server over HTTPS. For image suggestions, the key, image, and product details are sent to that server so it can call the selected provider.
 
-The web app encrypts profiles in the current browser profile. Windows/macOS desktop uses Electron `safeStorage` backed by operating-system secure storage. Web profiles do not sync through Supabase or other browsers. Keys are not stored in GitHub Pages, Supabase, or the server database. The server holds a submitted key in memory for that request and does not log request bodies. Use only a server you trust: it receives the key and image during processing and forwards them to the selected provider. Background removal runs U²-Net on the server and does not need a provider key.
+The web app encrypts profiles in the current browser profile. Tauri desktop uses Web Crypto/IndexedDB in its own WebView profile. Web profiles do not sync through Supabase or other browsers. Keys are not stored in GitHub Pages, Supabase, or the server database. The server holds a submitted key in memory for that request and does not log request bodies. Use only a server you trust: it receives the key and image during processing and forwards them to the selected provider. Background removal runs U²-Net on the server and does not need a provider key.
 
 Official key pages: [OpenAI](https://platform.openai.com/api-keys), [Gemini](https://aistudio.google.com/apikey), [Claude](https://console.anthropic.com/settings/keys), and [Grok](https://console.x.ai/team/default/api-keys). Provider API billing and quotas are separate from consumer chat subscriptions.
 

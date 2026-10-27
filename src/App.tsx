@@ -13,12 +13,16 @@ import type { User } from '@supabase/supabase-js';
 import { AccessDeniedPage, GoogleLoginPage, UsersPage } from './access';
 import { appBaseUrl, BioBuilderPage, BioLinks, BioPagesPage, channelHref, createDefaultChannels, defaultDestinations, readSharedBio as readLegacySharedBio, readBioShareId, readBioSlug, sanitizeSalesChannels, SalesChannelsPage, type BioProfile, type SalesChannel } from './sales-channels';
 import { isValidBioSlug, normalizeBioSlug } from './bio-slug.mjs';
+import DouyinStudio from './douyin/DouyinStudio';
+import { isDesktop, subscribeDesktopOAuth } from './desktop';
+import { authUserKey, hasGoogleIdentity } from './auth-policy.mjs';
+import { mediaRequest, lockMediaSession } from './douyin/api';
 
-type Page = 'dashboard' | 'editor' | 'projects' | 'brand' | 'channels' | 'bios' | 'bio' | 'users';
+type Page = 'dashboard' | 'editor' | 'projects' | 'brand' | 'channels' | 'bios' | 'bio' | 'users' | 'douyin';
 type Modal = 'export' | 'settings' | 'help' | null;
 interface Suggestions { names: string[]; descriptions: string[]; source: string }
 const safeRead = (key: string, fallback = '') => { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } };
-const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Có lỗi xảy ra. Hãy thử lại.';
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : typeof error === 'string' ? error : 'Có lỗi xảy ra. Hãy thử lại.';
 function readLocalSalesChannels(): SalesChannel[] {
   try {
     const saved = safeRead('dt.salesChannels');
@@ -95,7 +99,7 @@ export default function App() {
   const [sharedBioSlug, setSharedBioSlug] = useState<string | null>(() => readBioSlug());
   const [sharedBioLoading, setSharedBioLoading] = useState(false);
   const [sharedBioError, setSharedBioError] = useState('');
-  const [page, setPage] = useState<Page>(() => readBioShareId() || readBioSlug() || readLegacySharedBio() ? 'bio' : 'dashboard');
+  const [page, setPage] = useState<Page>(() => readBioShareId() || readBioSlug() || readLegacySharedBio() ? 'bio' : isDesktop() && window.location.hash === '#douyin' ? 'douyin' : 'dashboard');
   const [channels, setChannels] = useState<SalesChannel[]>(readLocalSalesChannels);
   const [bioName, setBioName] = useState(() => safeRead('dt.bioName', safeRead('dt.brand', 'Tạp Hoá DT') || 'Tạp Hoá DT'));
   const [bioDescription, setBioDescription] = useState(() => safeRead('dt.bioDescription', safeRead('dt.language', 'vi') === 'en' ? 'Your favorite shop, selected products, and fresh offers every day.' : 'Gian hàng yêu thích, sản phẩm được chọn và ưu đãi mới mỗi ngày.'));
@@ -181,7 +185,7 @@ export default function App() {
   }, [channels]);
   useEffect(() => { try { localStorage.setItem('dt.bioShareId', bioShareId); localStorage.setItem('dt.bioIsPublished', bioIsPublished ? '1' : '0'); } catch {} }, [bioShareId, bioIsPublished]);
   useEffect(() => {
-    const pageName = !isPublicBio && (!cloudUser || !appAccess?.isActive) ? t('Đăng nhập') : sharedBio ? `${sharedBio.name} · ${t('Trang bio')}` : sharedBioId || sharedBioSlug ? t('Trang bio') : page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Chỉnh sửa bio') : page === 'bios' ? t('Các trang bio') : page === 'users' ? t('Quản lý người dùng') : t('Kênh bán hàng');
+    const pageName = !isPublicBio && (!cloudUser || !appAccess?.isActive) ? t('Đăng nhập') : sharedBio ? `${sharedBio.name} · ${t('Trang bio')}` : sharedBioId || sharedBioSlug ? t('Trang bio') : page === 'douyin' ? 'Douyin Studio' : page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Chỉnh sửa bio') : page === 'bios' ? t('Các trang bio') : page === 'users' ? t('Quản lý người dùng') : t('Kênh bán hàng');
     document.title = sharedBio || sharedBioId || sharedBioSlug ? pageName : `${t('DT App')} · ${pageName}`;
   }, [page, language, sharedBio, sharedBioId, sharedBioSlug, isPublicBio, cloudUser, appAccess?.isActive]);
   useEffect(() => {
@@ -203,17 +207,23 @@ export default function App() {
   useEffect(() => {
     if (!cloudClient) { setCloudUser(null); setAuthLoading(false); return; }
     let mounted = true;
+    let knownKey: string | undefined;
+    const applyUser = (user: User | null) => {
+      if (!mounted) return;
+      const key = authUserKey(user);
+      if (key === knownKey) return;
+      knownKey = key;
+      setCloudUser(user); setAppAccess(null); setAuthError('');
+      setAuthLoading(Boolean(user));
+      if (!user) { setBioPages([]); setBioCloudReady(false); }
+    };
     cloudClient.auth.getSession().then(({ data, error }) => {
       if (!mounted) return;
+      applyUser(data.session?.user || null);
       if (error) setAuthError(errorMessage(error));
-      setCloudUser(data.session?.user || null);
-      if (!data.session?.user) setAuthLoading(false);
-    });
+    }).catch(error => { if (mounted) { setAuthError(errorMessage(error)); setAuthLoading(false); } });
     const { data: listener } = cloudClient.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
-      setCloudUser(session?.user || null); setAppAccess(null); setAuthError('');
-      setAuthLoading(Boolean(session?.user));
-      if (!session?.user) { setAuthLoading(false); setBioPages([]); setBioCloudReady(false); }
+      applyUser(session?.user || null);
     });
     return () => { mounted = false; listener.subscription.unsubscribe(); };
   }, [cloudClient]);
@@ -245,8 +255,25 @@ export default function App() {
       if (!cloudClient) return;
       void applyDesktopOAuthCallback(cloudClient, callbackUrl).catch(error => setAuthError(errorMessage(error)));
     });
-    return () => unsubscribe?.();
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    void subscribeDesktopOAuth(callbackUrl => {
+      if (!disposed && cloudClient) void applyDesktopOAuthCallback(cloudClient, callbackUrl).catch(error => setAuthError(errorMessage(error)));
+    }).then(unsubscribeTauri => { if (disposed) unsubscribeTauri(); else stop = unsubscribeTauri; }).catch(error => setAuthError(errorMessage(error)));
+    return () => { disposed = true; unsubscribe?.(); stop?.(); };
   }, [cloudClient]);
+  useEffect(() => {
+    if (!isDesktop()) return;
+    if (!hasGoogleIdentity(cloudUser) || !appAccess?.isActive || isPublicBio) {
+      void lockMediaSession().catch(error => setAuthError(errorMessage(error)));
+      return;
+    }
+    let disposed = false;
+    const heartbeat = () => { if (!disposed) void mediaRequest('heartbeat').catch(error => setAuthError(errorMessage(error))); };
+    heartbeat();
+    const timer = setInterval(heartbeat, 30000);
+    return () => { disposed = true; clearInterval(timer); };
+  }, [cloudUser, appAccess?.isActive, isPublicBio]);
   useEffect(() => {
     if (!sharedBioId && !sharedBioSlug) { setSharedBioLoading(false); return; }
     if (!cloudClient) { setSharedBioLoading(false); setSharedBioError(t('Chưa kết nối được Supabase để mở trang bio.')); return; }
@@ -468,6 +495,7 @@ export default function App() {
   }
   async function signOutCloud() {
     if (!cloudClient) return;
+    if (isDesktop()) await lockMediaSession();
     const { error } = await cloudClient.auth.signOut();
     if (error) notify(errorMessage(error), true);
     else { setAppAccess(null); setBioPages([]); setBioRecordId(null); setProjects([]); notify(t('Đã đăng xuất Supabase.')); }
@@ -532,7 +560,7 @@ export default function App() {
   };
   if (!isPublicBio) {
     if (authLoading) return <main className="access-screen"><section className="access-card access-loading"><LoaderCircle className="spin" size={28} /><p>{t('Đang xác minh tài khoản Google…')}</p></section></main>;
-    if (!cloudUser || cloudUser.is_anonymous) return <GoogleLoginPage loading={!!busy} error={authError} onGoogle={() => { void startGoogleLogin(); }} language={language} appearance={appearance} onToggleLanguage={() => setLanguage(value => value === 'vi' ? 'en' : 'vi')} onToggleTheme={() => setAppearance(value => value === 'light' ? 'dark' : 'light')} t={t} />;
+    if (!hasGoogleIdentity(cloudUser)) return <GoogleLoginPage loading={!!busy} error={authError} onGoogle={() => { void startGoogleLogin(); }} language={language} appearance={appearance} onToggleLanguage={() => setLanguage(value => value === 'vi' ? 'en' : 'vi')} onToggleTheme={() => setAppearance(value => value === 'light' ? 'dark' : 'light')} t={t} />;
     if (!appAccess?.isActive) return <AccessDeniedPage email={cloudUser.email || ''} error={authError} loading={authLoading} onRetry={() => { void recheckAccess(); }} onSignOut={() => { void signOutCloud(); }} language={language} appearance={appearance} onToggleLanguage={() => setLanguage(value => value === 'vi' ? 'en' : 'vi')} onToggleTheme={() => setAppearance(value => value === 'light' ? 'dark' : 'light')} t={t} />;
   }
   return <div className={`app-shell ${isPublicBio ? 'bio-public-shell' : ''}`} data-theme={isPublicBio ? 'light' : appearance}>
@@ -542,6 +570,7 @@ export default function App() {
       <div className="nav-label">{t("DT APP")}</div>
       <nav aria-label={t("Điều hướng chính")}>
         <button className={page === 'dashboard' ? 'active' : ''} onClick={() => switchPage('dashboard')}><Home size={18} /> {t("Bảng điều khiển")}</button>
+        <button className={page === 'douyin' ? 'active' : ''} onClick={() => switchPage('douyin')}><ArrowDownToLine size={18} /> Douyin Studio</button>
         <button className={page === 'editor' ? 'active' : ''} onClick={() => switchPage('editor')}><LayoutGrid size={18} /> {t("Xưởng thiết kế")} <span className="nav-dot" /></button>
         <button className={page === 'projects' ? 'active' : ''} onClick={() => switchPage('projects')}><FolderHeart size={18} /> {t('Thiết kế đã lưu')} {projects.length > 0 && <span className="count">{projects.length}</span>}</button>
         <button className={page === 'brand' ? 'active' : ''} onClick={() => switchPage('brand')}><Palette size={18} /> {t("Bộ thương hiệu")}</button>
@@ -553,8 +582,8 @@ export default function App() {
       <div className="sidebar-bottom"><button onClick={() => { setServerForm(connection); setModal('settings'); }}><Settings2 size={17} /> {t("Cài đặt kết nối")}</button><button onClick={() => setModal('help')}><CircleHelp size={17} /> {t("Hướng dẫn sử dụng")}</button><div className="profile"><span>{(cloudUser?.email || 'DT').slice(0, 1).toUpperCase()}</span><div>{appAccess?.displayName || cloudUser?.email}<small>{t(appAccess?.role === 'admin' ? 'Quản trị viên' : 'Biên tập viên')}</small></div><button className="icon-button" title={t('Đăng xuất')} aria-label={t('Đăng xuất')} onClick={() => { void signOutCloud(); }}><LogOut size={15} /></button></div></div>
     </aside>}
     <div className={`main-shell ${isPublicBio ? 'bio-public-main' : ''}`}>
-      {!isPublicBio && <header className="topbar"><div className="breadcrumbs"><button className="mobile-menu icon-button" onClick={() => setMobileNav(v => !v)} aria-label={t('Mở menu')}><Menu size={20} /></button><span>{t('DT App')}</span><ChevronRight size={14} /><strong>{page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Chỉnh sửa bio') : page === 'bios' ? t('Các trang bio') : page === 'users' ? t('Người dùng') : t('Kênh bán hàng')}</strong></div><div className="top-actions"><span className="signed-in-email">{cloudUser?.email}</span><span className="version-tag">{t('BẢN THỬ NGHIỆM 0.1')}</span><button className="language-toggle" onClick={() => setLanguage(v => v === 'vi' ? 'en' : 'vi')} aria-label={language === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}>{language === 'vi' ? 'EN' : 'VI'}</button><button className="icon-button" onClick={() => setAppearance(v => v === 'light' ? 'dark' : 'light')} aria-label={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')} title={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')}>{appearance === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="icon-button help-button" aria-label={t('Trợ giúp')} onClick={() => setModal('help')}><CircleHelp size={19} /></button><button className="icon-button" aria-label={t('Đăng xuất')} title={t('Đăng xuất')} onClick={() => { void signOutCloud(); }}><LogOut size={16} /></button></div></header>}
-      {page === 'bios' ? <BioPagesPage bios={bioPages} urlFor={makeBioShareUrl} onCreate={startNewBio} onEdit={editBio} onDelete={id => { void removeBio(id); }} t={t} /> : page === 'users' ? <UsersPage client={cloudClient!} currentEmail={cloudUser?.email || ''} t={t} notify={notify} /> : page === 'dashboard' ? <main className="dashboard-page">
+      {!isPublicBio && <header className="topbar"><div className="breadcrumbs"><button className="mobile-menu icon-button" onClick={() => setMobileNav(v => !v)} aria-label={t('Mở menu')}><Menu size={20} /></button><span>{t('DT App')}</span><ChevronRight size={14} /><strong>{page === 'douyin' ? 'Douyin Studio' : page === 'dashboard' ? t('Bảng điều khiển') : page === 'editor' ? t('Xưởng thiết kế') : page === 'projects' ? t('Thiết kế đã lưu') : page === 'brand' ? t('Bộ thương hiệu') : page === 'bio' ? t('Chỉnh sửa bio') : page === 'bios' ? t('Các trang bio') : page === 'users' ? t('Người dùng') : t('Kênh bán hàng')}</strong></div><div className="top-actions"><span className="signed-in-email">{cloudUser?.email}</span><span className="version-tag">{t('BẢN THỬ NGHIỆM 0.2.1')}</span><button className="language-toggle" onClick={() => setLanguage(v => v === 'vi' ? 'en' : 'vi')} aria-label={language === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}>{language === 'vi' ? 'EN' : 'VI'}</button><button className="icon-button" onClick={() => setAppearance(v => v === 'light' ? 'dark' : 'light')} aria-label={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')} title={appearance === 'light' ? t('Chế độ tối') : t('Chế độ sáng')}>{appearance === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button><button className="icon-button help-button" aria-label={t('Trợ giúp')} onClick={() => setModal('help')}><CircleHelp size={19} /></button><button className="icon-button" aria-label={t('Đăng xuất')} title={t('Đăng xuất')} onClick={() => { void signOutCloud(); }}><LogOut size={16} /></button></div></header>}
+      {page === 'douyin' ? <DouyinStudio /> : page === 'bios' ? <BioPagesPage bios={bioPages} urlFor={makeBioShareUrl} onCreate={startNewBio} onEdit={editBio} onDelete={id => { void removeBio(id); }} t={t} /> : page === 'users' ? <UsersPage client={cloudClient!} currentEmail={cloudUser?.email || ''} t={t} notify={notify} /> : page === 'dashboard' ? <main className="dashboard-page">
         <section className="dashboard-welcome">
           <div className="dashboard-welcome-copy"><div className="eyebrow"><span /> DT APP · {t('MỘT KHÔNG GIAN CHO SÁNG TẠO')}</div><h1>{t('Chào mừng đến DT App')}<span>.</span></h1><p>{t('Quản lý công cụ sáng tạo, thiết kế và cài đặt của bạn từ một nơi.')}</p><div className="dashboard-hero-actions"><button className="button primary" onClick={newProject}><Plus size={17} /> {t('Tạo poster mới')}</button><button className="button secondary" onClick={() => switchPage('projects')}><FolderHeart size={16} /> {t('Xem thiết kế đã lưu')}</button></div></div>
           <div className="dashboard-welcome-art"><div className="dashboard-sparkle sparkle-one">✳</div><div className="dashboard-sparkle sparkle-two">✦</div><div className="dashboard-preview"><PosterCanvas language={language} poster={poster} thumbnail /></div><div className="dashboard-preview-label"><span className="dashboard-preview-icon"><LayoutGrid size={16} /></span><span><strong>DT Poster Studio</strong><small>{t('Công cụ thiết kế poster')}</small></span><ArrowUpRight size={15} /></div></div>
@@ -566,6 +595,7 @@ export default function App() {
         </section>
         <div className="dashboard-section-heading"><div><div className="eyebrow">{t('DT APP')}</div><h2>{t('Ứng dụng của bạn')}</h2></div><p>{t('Chọn một không gian để tiếp tục.')}</p></div>
         <section className="dashboard-app-grid">
+          <button className="dashboard-app-card" onClick={() => switchPage('douyin')}><span className="dashboard-app-icon warm"><ArrowDownToLine size={21} /></span><small>DOUYIN STUDIO</small><strong>Video &amp; lồng tiếng</strong><span className="dashboard-app-description">Lưu kênh tham khảo, tải video và tạo giọng OmniVoice trên desktop.</span><span className="dashboard-card-action">Mở Douyin Studio <ArrowRight size={15} /></span></button>
           <button className="dashboard-app-card featured" onClick={() => switchPage('editor')}><span className="dashboard-app-icon"><LayoutGrid size={21} /></span><small>01 · DT POSTER STUDIO</small><strong>{t('Thiết kế poster')}</strong><span className="dashboard-app-description">{t('Tạo poster sản phẩm với mẫu, tỷ lệ và phong cách có sẵn.')}</span><span className="dashboard-card-action">{t('Mở ứng dụng')} <ArrowRight size={15} /></span></button>
           <button className="dashboard-app-card" onClick={() => switchPage('projects')}><span className="dashboard-app-icon warm"><FolderHeart size={21} /></span><small>02 · {t('THƯ VIỆN')}</small><strong>{t('Thiết kế đã lưu')}</strong><span className="dashboard-app-description">{t('Mở lại và tiếp tục chỉnh sửa thiết kế của bạn.')}</span><span className="dashboard-card-action">{t('Mở thư viện')} <ArrowRight size={15} /></span></button>
           <button className="dashboard-app-card" onClick={() => switchPage('brand')}><span className="dashboard-app-icon violet"><Palette size={21} /></span><small>03 · {t('NHẬN DIỆN')}</small><strong>{t('Bộ thương hiệu')}</strong><span className="dashboard-app-description">{t('Lưu tên thương hiệu và màu cho poster tiếp theo.')}</span><span className="dashboard-card-action">{t('Mở bộ thương hiệu')} <ArrowRight size={15} /></span></button>

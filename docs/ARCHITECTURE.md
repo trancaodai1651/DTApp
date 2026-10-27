@@ -5,7 +5,7 @@
 ```mermaid
 flowchart LR
     Web[Web: Windows server / GitHub Pages] --> UI[React + TypeScript + Canvas]
-    Desktop[Electron: Windows x64/ARM64 & macOS Intel/ARM64] --> UI
+    Desktop[Tauri v2: Windows x64 & macOS Universal] --> UI
     UI --> Local[IndexedDB: thiết kế trên máy]
     UI --> Export[PNG / JPG / JSON dự án]
     UI -->|HTTPS + Bearer token + API profile cho từng request| API[Node.js API trên Windows]
@@ -30,7 +30,7 @@ Không tự thay tên người dùng đã nhập khi nhận gợi ý AI. Nếu t
 
 ## Dữ liệu và khóa
 
-Thiết kế và ảnh nằm trong IndexedDB của browser/profile desktop, có bản nháp tự lưu. API profiles web được mã hóa AES-GCM bằng Web Crypto và lưu trong IndexedDB của browser hiện tại; app desktop mã hóa JSON bằng Electron `safeStorage` rồi ghi trong thư mục dữ liệu người dùng. Khóa không nằm trong localStorage, Supabase, GitHub Pages hay database của server và không đồng bộ giữa thiết bị. Server dùng key profile request-only trong RAM hoặc khóa dự phòng `.env`; body request không được log.
+Thiết kế và ảnh nằm trong IndexedDB của browser/profile desktop, có bản nháp tự lưu. API profiles web được mã hóa AES-GCM bằng Web Crypto và lưu trong IndexedDB của browser hiện tại; app Tauri dùng cùng kho Web Crypto/IndexedDB trong profile WebView riêng. Khóa không nằm trong localStorage, Supabase, GitHub Pages hay database của server và không đồng bộ giữa thiết bị. Server dùng key profile request-only trong RAM hoặc khóa dự phòng `.env`; body request không được log.
 
 ## Các bước tiếp theo cho bản thương mại
 
@@ -38,4 +38,8 @@ Thiết kế và ảnh nằm trong IndexedDB của browser/profile desktop, có 
 2. Chốt máy chủ, tên miền, nhà cung cấp AI và hạn mức chi phí, đo chất lượng xoá nền với ảnh thật.
 3. Bổ sung đăng nhập, quota theo tài khoản, hàng đợi tác vụ, đồng bộ dự án nếu cần nhiều người dùng.
 4. Thêm chỉnh text/layer tự do, lưu bộ font, logo, template tùy chỉnh và xuất hàng loạt nếu thuộc phạm vi sản phẩm.
-5. Ký số Windows, notarize macOS, xác thực trên đủ bốn nền tảng vật lý, cấu hình phát hành/cập nhật.
+5. Ký số Windows, notarize macOS, xác thực trên Windows, macOS Intel và Apple Silicon, cấu hình phát hành/cập nhật.
+
+## Douyin Studio
+
+Xem [kiến trúc worker và hướng dẫn](DOUYIN_STUDIO.md). Tauri giao tiếp JSON-lines với Python worker đóng gói; SQLite lưu kênh/hàng đợi, Chromium dùng hồ sơ khách riêng, FFmpeg ghép âm, OmniVoice chạy trong môi trường Python tùy chọn.

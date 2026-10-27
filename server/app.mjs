@@ -120,7 +120,7 @@ function resolveAIRequest(config, value) {
 export function createApp(config = {}, dependencies = {}) {
   const app = express();
   const token = config.accessToken || '';
-  const allowed = new Set((config.allowedOrigins || 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:4173,http://localhost:4173,https://trancaodai1651.github.io,app://dt').split(',').map(v => v.trim()).filter(Boolean));
+  const allowed = new Set((config.allowedOrigins || 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:4173,http://localhost:4173,https://trancaodai1651.github.io,app://dt,tauri://localhost,http://tauri.localhost,https://tauri.localhost,http://127.0.0.1:1420').split(',').map(v => v.trim()).filter(Boolean));
   let removalJobs = 0, suggestionJobs = 0;
   const rates = new Map();
   app.disable('x-powered-by');

@@ -10,3 +10,10 @@ public/ort/
 public/models/*.onnx
 server/models/*.onnx
 artifacts/
+.venv-media/
+.venv-omnivoice/
+__pycache__/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/worker-runtime/*
+!src-tauri/worker-runtime/.gitkeep

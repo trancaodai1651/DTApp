@@ -1,12 +1,11 @@
 {
   "name": "dt-poster-studio",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "description": "DT App — Không gian sáng tạo và thiết kế poster trên web và desktop",
   "author": "DT Studio",
   "license": "UNLICENSED",
   "type": "module",
-  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "prepare:assets": "node scripts/prepare-assets.mjs",
@@ -14,69 +13,36 @@
     "build": "npm run typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "server": "node --env-file-if-exists=.env server/index.mjs",
-    "desktop": "npm run build && electron .",
-    "pack:win": "npm run build && electron-builder --win --x64 --arm64 --publish never",
-    "pack:mac": "npm run build && electron-builder --mac --x64 --arm64 --publish never",
-    "test": "node --test tests/*.test.mjs"
+    "desktop": "tauri dev",
+    "pack:win": "npm run desktop:worker && tauri build --target x86_64-pc-windows-msvc --bundles nsis",
+    "pack:mac": "tauri build --target universal-apple-darwin --bundles app,dmg",
+    "test": "node --test tests/*.test.mjs",
+    "tauri": "tauri",
+    "desktop:setup": "python scripts/setup-media.py",
+    "desktop:worker": "python scripts/build-media.py",
+    "voice:setup": "python scripts/setup-omnivoice.py",
+    "test:media": "python -m unittest discover -s desktop/tests -v"
   },
   "dependencies": {
     "@fontsource/be-vietnam-pro": "^5.2.0",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/playfair-display": "^5.2.0",
     "@supabase/supabase-js": "^2.118.0",
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-deep-link": "^2.6.2",
+    "@tauri-apps/plugin-dialog": "^2.8.3",
+    "@tauri-apps/plugin-opener": "^2.7.2",
     "lucide-react": "^0.468.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "electron": "^45.0.0",
-    "electron-builder": "^26.0.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.0"
-  },
-  "build": {
-    "appId": "com.dtstudio.poster",
-    "productName": "DT App",
-    "asar": true,
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json",
-      "THIRD_PARTY_NOTICES.md"
-    ],
-    "artifactName": "DT-Poster-Studio-${version}-${os}-${arch}.${ext}",
-    "win": {
-      "target": [
-        "nsis",
-        "zip"
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    },
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "protocols": [
-        {
-          "name": "DT App Google Sign-in",
-          "schemes": [
-            "dtapp"
-          ]
-        }
-      ],
-      "category": "public.app-category.graphics-design",
-      "minimumSystemVersion": "13.0.0"
-    }
   }
 }
