@@ -112,8 +112,9 @@ def mux(request, generated):
             cursor = end_samples
         silence(writer, round(duration*rate)-cursor)
     volume = float(request.get("originalVolume", 0))
+    voice_mode = request.get("voiceMode", "narration")
     args = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", source, "-i", timeline]
-    if volume > 0 and re.search(r"Stream #\S+.*Audio:", metadata):
+    if voice_mode == "narration" and volume > 0 and re.search(r"Stream #\S+.*Audio:", metadata):
         args += ["-filter_complex", f"[0:a:0]volume={volume}[original];[original][1:a:0]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[a]", "-map", "0:v:0", "-map", "[a]"]
     else:
         args += ["-map", "0:v:0", "-map", "1:a:0"]

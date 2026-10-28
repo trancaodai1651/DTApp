@@ -88,3 +88,11 @@ Video gốc có 11.054.017 byte, dài 68,6 giây. Mẫu SRT chỉ có lời tron
 - Sửa bộ quét trang kênh để tính liên kết bài mới trong DOM vào tiến độ phân trang và xử lý metadata xem trước theo lô, bỏ giới hạn 24 bài. Metadata lấy được từ thẻ kênh được chuyển tiếp vào hàng đợi theo dõi.
 - Kiểm tra lại hồ sơ tác giả của video người dùng gửi bằng hồ sơ Chromium khách mới: Douyin trả `服务异常` và danh sách bài có 0 thẻ. Vì thế app vẫn phải báo bị chặn; không thể lấy các bài mà chính Douyin không trả cho khách hoặc yêu cầu tài khoản để xem. Không đăng nhập hay vượt CAPTCHA.
 - `npm run build` và `py_compile` qua; unit suites chưa chạy trong lượt này. Cần quét lại kênh khi Douyin trả danh sách công khai để xác nhận số bài và trạng thái hoàn tất.
+
+
+## Cập nhật 0.2.4 — tìm video và chọn kiểu tạo giọng
+
+- Thêm tìm video theo từ khóa trong phiên khách Douyin. Bộ xử lý đọc kết quả công khai từ trang tìm kiếm của Douyin, lưu kết quả vào thư viện để tải từng video hoặc chọn nhiều video; trang chưa xác nhận phân trang đầy đủ thì đánh dấu kết quả chưa hoàn chỉnh. Không đăng nhập Douyin, đọc cookie trình duyệt cá nhân hoặc vượt CAPTCHA.
+- Thêm hai chế độ OmniVoice: thuyết minh trộn giọng mới với audio gốc ở mức âm lượng chọn được (mặc định 25%); lồng tiếng thay audio gốc. Cả hai bắt buộc chép audio của video trước để tạo SRT và trích đoạn audio cùng bản chép đồng bộ làm mẫu giọng. Bản chép không tự dịch; người dùng sửa/dịch SRT và chọn ngôn ngữ đầu ra. Luồng hình gốc được copy nguyên.
+- Kiểm tra trang tìm kiếm Douyin bằng hồ sơ khách sạch trên máy Windows ngày 2026-10-28: Douyin trả trang xác minh CAPTCHA trước khi hiển thị kết quả. Vì vậy luồng tìm kiếm thật chưa thể xác nhận trên phiên khách hiện tại; khi gặp trạng thái này, mở Douyin khách để tự xử lý xác minh nếu trang cho phép rồi tìm lại.
+- Xác minh mã nguồn: `npm run build`, `py_compile` cho worker và `git diff --check` đều qua. Chưa tạo lại bộ cài Windows/macOS từ mã nguồn 0.2.4.

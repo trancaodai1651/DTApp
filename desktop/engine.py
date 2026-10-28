@@ -182,6 +182,11 @@ class Engine:
             url = douyin_url(payload.get("url", ""))
             date_bounds(payload.get("mode", "all"), payload.get("anchor"), payload.get("end"))
             return self.queue("scan", {**payload, "url": url})
+        if command == "search":
+            query = str(payload.get("query", "")).strip()
+            if not query or len(query) > 120 or any(ord(char) < 32 for char in query):
+                raise ValueError("Nhập từ khóa tìm kiếm Douyin từ 1 đến 120 ký tự.")
+            return self.queue("search", {"query": query})
         if command == "download":
             ids = payload.get("ids", [])
             if not isinstance(ids, list) or not ids or len(ids) > 10000:
@@ -192,12 +197,14 @@ class Engine:
             if not video or not video.get("file") or not Path(video["file"]).is_file():
                 raise ValueError("Tải video về trước khi lồng tiếng.")
             parse_script(payload.get("script", ""))
+            if payload.get("voiceMode", "narration") not in ("narration", "dub"):
+                raise ValueError("Chế độ âm thanh cần là thuyết minh hoặc lồng tiếng.")
             if not self.settings["voicePython"]:
                 raise ValueError("Chọn Python đã cài OmniVoice trong Cài đặt Douyin trước.")
-            if payload.get("refAudio") and not Path(payload["refAudio"]).is_file():
+            if not payload.get("refAudio") or not str(payload.get("refText", "")).strip():
+                raise ValueError("Chép lời audio gốc để lấy đoạn tiếng và bản chép làm mẫu giọng OmniVoice.")
+            if not Path(payload["refAudio"]).is_file():
                 raise ValueError("Tập tin giọng mẫu không tồn tại.")
-            if payload.get("refAudio") and not payload.get("refText", "").strip():
-                raise ValueError("Nhập bản chép lời giọng mẫu để không phải tải thêm model nhận dạng.")
             if not 0 <= float(payload.get("originalVolume", 0)) <= 1:
                 raise ValueError("Âm lượng gốc từ 0 đến 1.")
             return self.queue("dub", payload)
@@ -325,6 +332,23 @@ class Engine:
             message=f"Tìm thấy {len(result['videos'])} video, {len(matches)} video trong lựa chọn. " + warning,
             resultIds=matches)
 
+    async def search(self, job):
+        query = job["input"]["query"]
+        result = await self.browser.search(query,
+            lambda message: self.update_job(job, message=message),
+            lambda: job["id"] in self.cancelled)
+        ids = []
+        for video in result["videos"]:
+            old = self.store.get("videos", video["id"]) or {}
+            video.update(file=old.get("file", ""), dubbedFile=old.get("dubbedFile", ""),
+                channelId=old.get("channelId", ""))
+            self.store.put("videos", video)
+            ids.append(video["id"])
+        warning = result["warning"]
+        self.update_job(job, state="partial" if warning else "done", progress=100,
+            message=f'Tìm thấy {len(ids)} video công khai cho “{query}”. ' + warning,
+            resultIds=ids)
+
     async def run_process(self, args, job):
         process = await asyncio.create_subprocess_exec(*map(str, args), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, **HIDDEN)
         async def read():
@@ -433,7 +457,8 @@ class Engine:
             raise ValueError("Không tìm thấy video gốc trên đĩa.")
         work = self.root / "voice-jobs" / job["id"]
         work.mkdir(parents=True, exist_ok=True)
-        output = Path(video["file"]).with_name(Path(video["file"]).stem + f"_dub_{job['id'][:8]}.mp4")
+        mode_suffix = "narration" if payload.get("voiceMode", "narration") == "narration" else "dub"
+        output = Path(video["file"]).with_name(Path(video["file"]).stem + f"_{mode_suffix}_{job['id'][:8]}.mp4")
         request = {**payload, "segments": parse_script(payload["script"]), "video": video["file"],
             "output": str(output), "work": str(work), "device": self.settings["device"],
             "ffmpeg": imageio_ffmpeg.get_ffmpeg_exe()}
@@ -443,8 +468,10 @@ class Engine:
         if not output.is_file() or output.stat().st_size < 1024:
             raise RuntimeError("OmniVoice chưa tạo được video kết quả.")
         video["dubbedFile"] = str(output)
+        video["voiceMode"] = mode_suffix
         self.store.put("videos", video)
-        self.update_job(job, state="done", progress=100, message="Đã lồng tiếng và ghép video", output=str(output))
+        self.update_job(job, state="done", progress=100,
+            message=("Đã thuyết minh và ghép video" if mode_suffix == "narration" else "Đã lồng tiếng và ghép video"), output=str(output))
 
     async def transcribe(self, job):
         import imageio_ffmpeg
@@ -511,6 +538,8 @@ class Engine:
             try:
                 if job["kind"] == "scan":
                     await self.scan(job)
+                elif job["kind"] == "search":
+                    await self.search(job)
                 elif job["kind"] == "download":
                     await self.download(job)
                 elif job["kind"] == "dub":
@@ -578,7 +607,7 @@ class Engine:
                     await self.lock_session()
 
     def start_tasks(self):
-        self.tasks = [asyncio.create_task(self.worker({"scan", "guest", "close_guest", "install_browser"})),
+        self.tasks = [asyncio.create_task(self.worker({"scan", "search", "guest", "close_guest", "install_browser"})),
             asyncio.create_task(self.worker({"download"})), asyncio.create_task(self.worker({"download"})),
             asyncio.create_task(self.worker({"dub", "transcribe", "install_voice", "install_asr"})), asyncio.create_task(self.scheduler())]
 

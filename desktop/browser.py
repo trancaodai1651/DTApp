@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 from domain import aweme_records, douyin_url, video_id_from_url
 
 
@@ -57,6 +57,121 @@ class GuestBrowser:
             page = await context.new_page()
             await page.goto(douyin_url(url), wait_until="domcontentloaded", timeout=45000)
             return {"opened": True}
+
+    async def search(self, query, progress, cancelled, max_scrolls=24):
+        """Search videos visible to a clean Douyin guest session; never log in or bypass challenges."""
+        query = str(query).strip()
+        if not query or len(query) > 120 or any(ord(char) < 32 for char in query):
+            raise ValueError("Từ khóa tìm kiếm cần có từ 1 đến 120 ký tự.")
+        async with self.lock:
+            context = await self.start()
+            page = await context.new_page()
+            records, pending = {}, set()
+            state = {"hasMore": None, "searchSeen": False, "blocked": False}
+
+            async def on_response(response):
+                parsed = urlparse(response.url)
+                host = parsed.hostname or ""
+                if not (host == "douyin.com" or host.endswith(".douyin.com")):
+                    return
+                if "search" not in (parsed.path + "?" + parsed.query).lower():
+                    return
+                try:
+                    payload = await response.json()
+                    batch = aweme_records(payload)
+                    if batch:
+                        state["searchSeen"] = True
+                        for video in batch:
+                            records[video["id"]] = video
+                    more = payload.get("has_more", payload.get("hasMore")) if isinstance(payload, dict) else None
+                    if more is not None:
+                        state["hasMore"] = more
+                    if isinstance(payload, dict) and (payload.get("verify_type") or payload.get("status_code") in (8, 9, 10000, 1024)):
+                        state["blocked"] = True
+                except Exception:
+                    pass
+
+            def schedule(response):
+                task = asyncio.create_task(on_response(response))
+                pending.add(task)
+                task.add_done_callback(pending.discard)
+
+            page.on("response", schedule)
+            try:
+                search_url = "https://www.douyin.com/search/" + quote(query, safe="") + "?type=video"
+                await page.goto(search_url, wait_until="domcontentloaded", timeout=45000)
+                stale, previous = 0, -1
+                for turn in range(max_scrolls):
+                    if cancelled():
+                        raise asyncio.CancelledError()
+                    await page.wait_for_timeout(1200)
+                    if pending:
+                        await asyncio.gather(*list(pending), return_exceptions=True)
+                    count = len(records)
+                    progress(f"Tìm “{query}” · nhận {count} video công khai · trang {turn + 1}")
+                    if state["hasMore"] is False or state["hasMore"] == 0 or state["hasMore"] == "0":
+                        break
+                    stale = stale + 1 if count == previous else 0
+                    previous = count
+                    if state["blocked"] or stale >= 4:
+                        break
+                    await page.mouse.wheel(0, 1800)
+                if pending:
+                    await asyncio.gather(*list(pending), return_exceptions=True)
+
+                if not records:
+                    embedded = await page.locator(
+                        'script#RENDER_DATA, script#__NEXT_DATA__, script#__UNIVERSAL_DATA_FOR_REHYDRATION__'
+                    ).all_text_contents()
+                    for raw in embedded:
+                        try:
+                            for video in aweme_records(json.loads(unquote(raw))):
+                                records[video["id"]] = video
+                        except (ValueError, TypeError):
+                            pass
+
+                # Some public search layouts render cards without embedding the
+                # API payload in the document. Only use links in search-result
+                # containers so page chrome and unrelated navigation are skipped.
+                if not records:
+                    anchors = await page.locator(
+                        '[data-e2e*="search"] a[href*="/video/"], '
+                        '[data-e2e*="search"] a[href*="/note/"], '
+                        '[class*="search"] a[href*="/video/"], '
+                        '[class*="search"] a[href*="/note/"]'
+                    ).evaluate_all("nodes => nodes.map(a => { const card=a.closest('[data-e2e],article') || a.parentElement; return {href:a.href, title:(a.innerText || a.getAttribute('title') || card?.innerText || a.querySelector('img')?.alt || '').trim().slice(0,500)}; })")
+                    for anchor in anchors:
+                        identity = video_id_from_url(anchor.get("href", ""))
+                        if identity:
+                            try:
+                                link = douyin_url(anchor["href"])
+                            except ValueError:
+                                continue
+                            records.setdefault(identity, {"id":identity, "title":anchor["title"] or identity,
+                                "createdAt":None, "url":link, "author":"", "secUid":"", "cover":"",
+                                "mediaUrls":[], "duration":0, "width":0, "height":0, "bitRate":0, "isImage":False})
+
+                if not records:
+                    body = (await page.locator("body").inner_text())[:5000]
+                    title = (await page.title()).lower()
+                    if state["blocked"] or any(marker in (body + " " + title).lower() for marker in ("验证码", "安全验证", "verify")):
+                        raise GuestBlocked("Douyin đang yêu cầu xác minh khách. Mở Douyin khách, xử lý CAPTCHA trực tiếp nếu được hiển thị, rồi tìm lại; app không vượt xác minh hoặc đăng nhập thay bạn.")
+                    login_wall = any(marker in body for marker in (
+                        "登录后查看更多", "登录查看更多", "请登录后查看", "登录后查看全部"
+                    ))
+                    if login_wall and not state["searchSeen"]:
+                        raise GuestBlocked("Douyin yêu cầu đăng nhập để hiện kết quả tìm kiếm này. Chế độ khách chỉ tìm được nội dung Douyin công khai.")
+                    raise GuestBlocked("Douyin chưa trả kết quả tìm kiếm cho phiên khách. Thử lại sau hoặc mở Douyin khách để kiểm tra trang.")
+
+                values = list(records.values())
+                complete = state["hasMore"] is False or state["hasMore"] == 0 or state["hasMore"] == "0"
+                warning = "" if complete else "Đã lưu các kết quả công khai hiện tải được; Douyin chưa xác nhận hết trang tìm kiếm."
+                return {"videos":values, "complete":complete, "warning":warning}
+            finally:
+                page.remove_listener("response", schedule)
+                if pending:
+                    await asyncio.gather(*list(pending), return_exceptions=True)
+                await page.close()
 
     async def collect(self, url, progress, cancelled, max_scrolls=600, since=None, on_videos=None):
         async with self.lock:

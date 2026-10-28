@@ -11,7 +11,7 @@ export interface DouyinChannel {
 export interface DouyinVideo {
   id: string; title: string; url: string; author: string; createdAt: number | null;
   channelId: string; duration: number; isImage: boolean; file: string; dubbedFile: string;
-  width?: number; height?: number; bitRate?: number;
+  width?: number; height?: number; bitRate?: number; voiceMode?: 'narration' | 'dub';
 }
 export interface MediaJob {
   id: string; kind: string; state: string; progress: number; message: string;
