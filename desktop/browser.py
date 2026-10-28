@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import re
 from urllib.parse import quote, unquote, urlparse
-from domain import aweme_records, douyin_url, video_id_from_url
+from domain import aweme_records, douyin_url, video_id_from_url, merge_video_records
 
 
 class GuestBlocked(RuntimeError):
@@ -30,6 +30,8 @@ class GuestBrowser:
         self.runtime = self.context = None
         self.visible = False
         self.search_page = None
+        self.collect_page = None
+        self.collect_source = None
         self.lock = asyncio.Lock()
 
     async def start(self, visible=False):
@@ -59,11 +61,13 @@ class GuestBrowser:
             await self.runtime.stop()
         self.context = self.runtime = None
         self.search_page = None
+        self.collect_page = None
+        self.collect_source = None
         self.visible = False
 
     async def search_challenge_visible(self, page):
         if page.is_closed():
-            raise GuestBlocked("Cửa sổ tìm kiếm đã đóng. Bấm tìm lại để mở Douyin khách.")
+            raise GuestBlocked("Cửa sổ Douyin đã đóng. Thử lại để mở phiên khách.")
         if "验证码" in await page.title():
             return True
         for frame in await page.locator('iframe[src*="verifycenter/captcha"], iframe[src*="captcha"]').all():
@@ -71,7 +75,7 @@ class GuestBrowser:
                 return True
         return False
 
-    async def wait_for_search_verification(self, page, progress, cancelled, timeout=180):
+    async def wait_for_verification(self, page, progress, cancelled, timeout=180, purpose="tìm kiếm"):
         if not await self.search_challenge_visible(page):
             return False
         await page.bring_to_front()
@@ -81,7 +85,7 @@ class GuestBrowser:
                 raise asyncio.CancelledError()
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
-                raise GuestBlocked("Douyin vẫn chờ xác minh. Tab tìm kiếm đã được giữ mở; hoàn tất CAPTCHA trong cửa sổ đó rồi bấm tìm lại.")
+                raise GuestBlocked(f"Douyin vẫn chờ xác minh. Tab {purpose} đã được giữ mở; hoàn tất CAPTCHA trong cửa sổ đó rồi thử lại.")
             progress(f"Hoàn tất CAPTCHA trong cửa sổ Douyin đang mở · tự tiếp tục sau xác minh · còn {int(remaining)} giây")
             await asyncio.sleep(min(1, remaining))
         return True
@@ -121,7 +125,7 @@ class GuestBrowser:
                     if batch:
                         state["searchSeen"] = True
                         for video in batch:
-                            records[video["id"]] = video
+                            records[video["id"]] = merge_video_records(records.get(video["id"]), video)
                     more = payload.get("has_more", payload.get("hasMore")) if isinstance(payload, dict) else None
                     if more is not None:
                         state["hasMore"] = more
@@ -147,7 +151,7 @@ class GuestBrowser:
                     if cancelled():
                         raise asyncio.CancelledError()
                     await page.wait_for_timeout(1200)
-                    if await self.wait_for_search_verification(page, progress, cancelled):
+                    if await self.wait_for_verification(page, progress, cancelled):
                         state["blocked"] = False
                         stale, previous = 0, -1
                     if pending:
@@ -171,7 +175,7 @@ class GuestBrowser:
                     for raw in embedded:
                         try:
                             for video in aweme_records(json.loads(unquote(raw))):
-                                records[video["id"]] = video
+                                records[video["id"]] = merge_video_records(records.get(video["id"]), video)
                         except (ValueError, TypeError):
                             pass
 
@@ -217,10 +221,15 @@ class GuestBrowser:
                     await asyncio.gather(*list(pending), return_exceptions=True)
                 # Keep search/CAPTCHA open for retry and manual verification.
 
-    async def collect(self, url, progress, cancelled, max_scrolls=600, since=None, on_videos=None):
+    async def collect(self, url, progress, cancelled, max_scrolls=600, since=None, on_videos=None, interactive=False):
         async with self.lock:
-            context = await self.start()
-            page = await context.new_page()
+            context = await self.start(interactive)
+            page = self.collect_page if interactive else None
+            reuse = page is not None and not page.is_closed() and self.collect_source == douyin_url(url)
+            if page is None or page.is_closed():
+                page = await context.new_page()
+            if interactive:
+                self.collect_page, self.collect_source = page, douyin_url(url)
             records, pending, seen_cursors = {}, set(), set()
             state = {"hasMore": None, "listSeen": False, "blocked": False, "coveredSince": False,
                 "loginWall": False, "listError": False, "expectedCount": None}
@@ -235,7 +244,7 @@ class GuestBrowser:
                     payload = await response.json()
                     batch = aweme_records(payload)
                     for video in batch:
-                        records[video["id"]] = video
+                        records[video["id"]] = merge_video_records(records.get(video["id"]), video)
                     if "/aweme/post/" in response.url:
                         state["listSeen"] = True
                         state["hasMore"] = payload.get("has_more", payload.get("hasMore"))
@@ -259,21 +268,32 @@ class GuestBrowser:
                 task.add_done_callback(pending.discard)
             page.on("response", schedule)
             try:
-                await page.goto(douyin_url(url), wait_until="domcontentloaded", timeout=45000)
+                if not (reuse and await self.search_challenge_visible(page)):
+                    await page.goto(douyin_url(url), wait_until="domcontentloaded", timeout=45000)
+                if interactive:
+                    await page.bring_to_front()
+                    await self.wait_for_verification(page, progress, cancelled, purpose="quét")
+                elif await self.search_challenge_visible(page):
+                    raise GuestBlocked("Douyin cần xác minh khách. Mở lượt quét thủ công để xử lý trong cửa sổ Douyin.")
                 final_url = douyin_url(page.url)
                 target = video_id_from_url(final_url) or video_id_from_url(douyin_url(url))
                 channel = "/user/" in final_url and not target
                 sec_uid = urlparse(final_url).path.split("/user/")[-1].split("/")[0] if channel else None
-                stale, previous = 0, (-1, -1, -1)
+                stale, previous, quality_seen = 0, (-1, -1, -1), 0
                 for turn in range(max_scrolls if channel else 12):
                     if cancelled():
                         raise asyncio.CancelledError()
                     await page.wait_for_timeout(1500)
+                    if interactive and await self.wait_for_verification(page, progress, cancelled, purpose="quét"):
+                        state["blocked"] = False
+                        stale, previous = 0, (-1, -1, -1)
+                    if pending:
+                        await asyncio.gather(*list(pending), return_exceptions=True)
                     embedded = await page.locator('script#RENDER_DATA, script#__NEXT_DATA__, script#__UNIVERSAL_DATA_FOR_REHYDRATION__').all_text_contents()
                     for raw in embedded:
                         try:
                             for video in aweme_records(json.loads(unquote(raw))):
-                                records[video["id"]] = video
+                                records[video["id"]] = merge_video_records(records.get(video["id"]), video)
                         except (ValueError, TypeError):
                             pass
                     if channel:
@@ -299,7 +319,11 @@ class GuestBrowser:
                             if count:
                                 state["expectedCount"] = int((count.group(1) or count.group(2)).replace(",", ""))
                     if target and target in records and (records[target]["mediaUrls"] or records[target]["isImage"]):
-                        break
+                        quality_seen += 1
+                        if records[target]["isImage"] or quality_seen >= 2:
+                            break
+                        progress("Đã có video; đang chờ thêm metadata các mức chất lượng…")
+                        continue
                     progress(f"Đã tìm thấy {len(records)} video · trang {turn + 1}")
                     if channel and state["listSeen"] and (_has_no_more(state["hasMore"]) or state["coveredSince"]):
                         break
@@ -340,7 +364,7 @@ class GuestBrowser:
                                 try:
                                     payload = await response.json()
                                     for video in aweme_records(payload):
-                                        detail_records[video["id"]] = video
+                                        detail_records[video["id"]] = merge_video_records(detail_records.get(video["id"]), video)
                                 except Exception:
                                     pass
 
@@ -357,7 +381,7 @@ class GuestBrowser:
                                     for raw in embedded:
                                         try:
                                             for video in aweme_records(json.loads(unquote(raw))):
-                                                detail_records[video["id"]] = video
+                                                detail_records[video["id"]] = merge_video_records(detail_records.get(video["id"]), video)
                                         except (ValueError, TypeError):
                                             pass
                                     if link["id"] in detail_records:
@@ -385,7 +409,7 @@ class GuestBrowser:
                             if video and (not video.get("secUid") or video.get("secUid") == sec_uid):
                                 video["secUid"] = video.get("secUid") or sec_uid
                                 video["url"] = link["url"]
-                                records[video["id"]] = video
+                                records[video["id"]] = merge_video_records(records.get(video["id"]), video)
                                 found_batch.append(video)
                             elif link["id"] not in records:
                                 records[link["id"]] = {"id":link["id"], "title":link["title"] or link["id"],
@@ -400,7 +424,10 @@ class GuestBrowser:
                         raise GuestBlocked("Trang kênh Douyin đang báo 服务异常 và chưa trả video cho phiên khách. Thử mở cửa sổ Douyin khách rồi quét lại sau; app không tự đăng nhập hoặc vượt giới hạn của Douyin.")
                     if channel and state["loginWall"]:
                         raise GuestBlocked("Douyin yêu cầu đăng nhập để hiện bài đăng của kênh. Phiên khách không tải được video; hãy thử lại khi Douyin cho xem công khai.")
-                    raise GuestBlocked("Douyin chưa trả dữ liệu cho phiên khách. Mở cửa sổ khách, kiểm tra CAPTCHA/thông báo trên trang rồi thử lại. Không cần đăng nhập; nội dung yêu cầu đăng nhập không thể tải bằng chế độ khách.")
+                    body = (await page.locator("body").inner_text())[:12000]
+                    if search_login_required(body):
+                        raise GuestBlocked("Douyin yêu cầu đăng nhập để xem nội dung này. Phiên khách chưa nhận được video; tab quét được giữ mở nếu bạn đang quét thủ công.")
+                    raise GuestBlocked("Douyin chưa trả dữ liệu video cho phiên khách. Kiểm tra thông báo trong tab quét đang mở rồi thử lại; nếu trang yêu cầu tài khoản, chế độ khách không lấy được nội dung đó.")
                 complete = bool(target or (state["listSeen"] and (_has_no_more(state["hasMore"]) or state["coveredSince"])) or
                     (state["expectedCount"] is not None and len(values) >= state["expectedCount"]))
                 if channel and state["listError"] and not complete:
@@ -415,4 +442,5 @@ class GuestBrowser:
                 page.remove_listener("response", schedule)
                 if pending:
                     await asyncio.gather(*list(pending), return_exceptions=True)
-                await page.close()
+                if not interactive:
+                    await page.close()

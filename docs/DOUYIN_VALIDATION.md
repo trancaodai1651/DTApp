@@ -112,3 +112,14 @@ Video gốc có 11.054.017 byte, dài 68,6 giây. Mẫu SRT chỉ có lời tron
 - 24 kiểm thử Python qua, gồm giữ tab khi timeout/thử lại, hủy chờ, tự tiếp tục, gộp ba ngôn ngữ, bỏ trùng và giữ kết quả trước khi bị chặn. Build web qua.
 - Playwright thực chạy với response giả lập do dự án kiểm soát đã xác nhận chờ xác minh, bắt response và dùng lại tab. Đây không phải bằng chứng tìm được video Douyin thật.
 - Playwright chạy có cửa sổ trên Douyin thật nhận trang `验证码中间页`, iframe `rmc.bytedance.com/verifycenter/captcha/v2`, 0 video; timeout giữ tab mở. Người dùng đã hoàn tất CAPTCHA. Lượt Playwright tiếp theo dùng cùng guest profile đã vào trang tìm kiếm, nhận hộp `登录后即可搜索更多精彩视频` (cần đăng nhập để tìm thêm video), 0 video; app bổ sung nhận diện chính xác login wall này. Chưa thể xác nhận tìm kiếm trả video ở chế độ khách trong phiên này. Người dùng chọn chỉ tìm trực tiếp Douyin, không dùng chỉ mục web thay thế. Bằng chứng cục bộ: `artifacts/douyin-playwright-search-live/`, `artifacts/search-fixture-result.json`.
+
+
+## Cập nhật 0.2.7 — quét có cửa sổ và chất lượng nguồn cao nhất
+
+- Quét thủ công bằng Playwright mở/giữ cùng tab khách và chờ xác minh; thử lại cùng link không tải lại CAPTCHA đang mở. Theo dõi nền báo rõ khi cần quét thủ công. Tách thông báo thiếu dữ liệu, yêu cầu tài khoản và CAPTCHA.
+- Trước mỗi lần tải mới, đọc lại trang video để lấy metadata nguồn đầy đủ. Xếp chất lượng theo kích thước thực trong địa chỉ nguồn, sau đó bitrate; xét các trường AVC/HEVC/ByteVC, giữ bản tốt hơn khi có metadata trùng. Chỉ thử các URL cùng mức cao nhất; nếu chúng lỗi hoặc nguồn làm mới thấp hơn bản đã biết, dừng và báo lỗi thay vì tự hạ chất lượng.
+- FFmpeg đọc một khung hình để kiểm tra luồng video và độ phân giải trước khi đổi tệp `.part` thành MP4 hoàn tất. Không mã hóa lại tệp tải. Có nút tải lại bản cao nhất; tệp cũ được thay sau khi bản mới tải và kiểm tra xong.
+- Kiểm tra thật với video người dùng đã gửi `7681298667634390739`: Playwright khách nhận nguồn cao nhất 3840×2160, bitrate công bố 2.235.791 bit/s, 3 URL cùng mức. Tải thành công 19.163.250 byte; FFmpeg xác nhận 3840×2160, SHA-256 `4eafde93190934c45fa62361021c8dafea1f31866fbc93435855b9f75d6cc105`. Bằng chứng `artifacts/douyin-highest-live/report.json`.
+- Đây là bản cao nhất Douyin công khai trong metadata của phiên kiểm tra; không khẳng định là file master tác giả đã tải lên. Link quét lỗi trong ảnh mới chưa được cung cấp, nên chưa xác nhận riêng trường hợp đó hoặc tải đủ kênh bị giới hạn khách.
+
+- 33 kiểm thử Python và build web production qua; có kiểm tra không tải URL cache thấp, không tự hạ khi CDN lỗi, từ chối tệp có độ phân giải thấp hơn metadata, giữ tệp cũ nếu tải lại thất bại và giữ tab xác minh khi quét thủ công.

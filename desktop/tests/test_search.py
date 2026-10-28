@@ -41,7 +41,7 @@ class SearchBrowserTests(unittest.IsolatedAsyncioTestCase):
         self.env.stop()
 
     async def test_timeout_retains_exact_tab_and_retry_does_not_reset_challenge(self):
-        self.browser.wait_for_search_verification = AsyncMock(side_effect=GuestBlocked('waiting'))
+        self.browser.wait_for_verification = AsyncMock(side_effect=GuestBlocked('waiting'))
         for _ in range(2):
             with self.assertRaises(GuestBlocked):
                 await self.browser.search('木工DIY', Mock(), lambda:False)
@@ -55,19 +55,29 @@ class SearchBrowserTests(unittest.IsolatedAsyncioTestCase):
     async def test_verification_wait_resumes_when_challenge_disappears(self):
         self.browser.search_challenge_visible = AsyncMock(side_effect=[True, True, False])
         progress = Mock()
-        resumed = await self.browser.wait_for_search_verification(self.page, progress, lambda:False, timeout=.01)
+        resumed = await self.browser.wait_for_verification(self.page, progress, lambda:False, timeout=.01)
         self.assertTrue(resumed)
         progress.assert_called_once()
         self.page.bring_to_front.assert_awaited_once()
 
+    async def test_manual_scan_retains_challenge_tab_for_retry(self):
+        self.browser.wait_for_verification = AsyncMock(side_effect=GuestBlocked('waiting'))
+        for _ in range(2):
+            with self.assertRaises(GuestBlocked):
+                await self.browser.collect('https://www.douyin.com/video/12345678901', Mock(), lambda:False, interactive=True)
+        self.context.new_page.assert_awaited_once()
+        self.page.goto.assert_awaited_once()
+        self.page.close.assert_not_awaited()
+        self.assertIs(self.browser.collect_page, self.page)
+
     async def test_verification_timeout_is_actionable_and_does_not_close_tab(self):
         with self.assertRaisesRegex(GuestBlocked, 'giữ mở'):
-            await self.browser.wait_for_search_verification(self.page, Mock(), lambda:False, timeout=0)
+            await self.browser.wait_for_verification(self.page, Mock(), lambda:False, timeout=0)
         self.page.close.assert_not_awaited()
 
     async def test_cancel_stops_verification_wait(self):
         with self.assertRaises(asyncio.CancelledError):
-            await self.browser.wait_for_search_verification(self.page, Mock(), lambda:True)
+            await self.browser.wait_for_verification(self.page, Mock(), lambda:True)
 
     async def test_closed_search_window_has_readable_error(self):
         self.page.is_closed.return_value = True

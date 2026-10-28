@@ -16,10 +16,25 @@ import uuid
 from urllib.parse import urlparse
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from browser import GuestBrowser, GuestBlocked
-from domain import date_bounds, douyin_url, in_period, parse_script, safe_name
+from domain import date_bounds, douyin_url, in_period, parse_script, safe_name, video_quality
 from auth import GoogleSession
 
 HIDDEN = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+
+
+def verify_download_quality(path, expected):
+    import imageio_ffmpeg
+    result = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-nostdin", "-hide_banner", "-i", str(path),
+        "-map", "0:v:0", "-frames:v", "1", "-f", "null", "-"], capture_output=True, timeout=60, **HIDDEN)
+    text = result.stderr.decode("utf-8", errors="replace")
+    source = next((line for line in text.splitlines() if "Video:" in line), "")
+    dimensions = re.search(r"\b(\d{2,6})x(\d{2,6})\b", source)
+    if result.returncode or not dimensions:
+        raise RuntimeError("Không đọc được luồng hình trong video tải về; chưa lưu thành video hoàn tất.")
+    width, height = map(int, dimensions.groups())
+    if width * height < video_quality(expected)[0]:
+        raise RuntimeError(f"CDN trả bản {width}×{height} thấp hơn nguồn {expected['width']}×{expected['height']}; app không tự hạ chất lượng.")
+    return width, height
 
 
 class MediaRedirects(HTTPRedirectHandler):
@@ -208,7 +223,7 @@ class Engine:
             ids = payload.get("ids", [])
             if not isinstance(ids, list) or not ids or len(ids) > 10000:
                 raise ValueError("Chọn từ 1 đến 10.000 video.")
-            return self.enqueue_downloads(ids)
+            return self.enqueue_downloads(ids, force=payload.get("force") is True)
         if command == "dub":
             video = self.store.get("videos", payload.get("videoId"))
             if not video or not video.get("file") or not Path(video["file"]).is_file():
@@ -270,7 +285,7 @@ class Engine:
             return True
         raise ValueError("Lệnh không được hỗ trợ.")
 
-    def enqueue_downloads(self, ids):
+    def enqueue_downloads(self, ids, force=False):
         queued, skipped = 0, 0
         active = {j["input"].get("videoId") for j in self.store.active_jobs() if j["kind"] == "download"}
         queued_before = len(active)
@@ -278,11 +293,11 @@ class Engine:
             raise ValueError("Hàng đợi đã đầy; hãy tải thành nhiều đợt.")
         for identity in dict.fromkeys(ids):
             video = self.store.get("videos", identity)
-            if not video or video.get("isImage") or identity in active or (video.get("file") and Path(video["file"]).is_file()):
+            if not video or video.get("isImage") or identity in active or (not force and video.get("file") and Path(video["file"]).is_file()):
                 skipped += 1
                 continue
             self.store.put("jobs", {"id":str(uuid.uuid4()), "kind":"download", "state":"queued", "progress":0,
-                "message":"Đang chờ", "input":{"videoId":identity}, "output":"", "createdAt":time.time()})
+                "message":"Đang chờ", "input":{"videoId":identity, "force":force}, "output":"", "createdAt":time.time()})
             queued += 1
         return {"queued": queued, "skipped": skipped}
 
@@ -290,7 +305,7 @@ class Engine:
         payload = job["input"]
         channel = self.store.get("channels", payload.get("channelId"))
         scan_started = time.time()
-        options = {}
+        options = {"interactive": not payload.get("monitor", False)}
         if payload.get("monitor") and channel:
             since = channel.get("monitorSince", scan_started)
             cutoff = max(since, channel.get("lastMonitorCoverage", since) - 2*86400)
@@ -304,11 +319,11 @@ class Engine:
                     if video.get("secUid") != sec_uid or not video.get("createdAt") or video["createdAt"] < since:
                         continue
                     old = self.store.get("videos", video["id"]) or {}
-                    self.store.put("videos", {**video, "channelId":channel["id"], "file":old.get("file", ""), "dubbedFile":old.get("dubbedFile", "")})
+                    self.store.put("videos", {**video, "channelId":channel["id"], "file":old.get("file", ""), "dubbedFile":old.get("dubbedFile", ""), **{key:old.get(key) for key in ("qualityVerified", "downloadWidth", "downloadHeight")}})
                     ids.append(video["id"])
                 # Download lanes start immediately, before channel pagination finishes.
                 self.enqueue_downloads(ids)
-            options = {"since":cutoff, "on_videos":discover}
+            options = {"since":cutoff, "on_videos":discover, "interactive":False}
         result = await self.browser.collect(payload["url"], lambda message: self.update_job(job, message=message), lambda: job["id"] in self.cancelled, **options)
         # A shared video can discover and bookmark its author's public channel.
         if not channel and result["videos"][0].get("secUid"):
@@ -321,7 +336,7 @@ class Engine:
         matches, unknown_dates = [], 0
         for video in result["videos"]:
             old = self.store.get("videos", video["id"]) or {}
-            video.update(file=old.get("file", ""), dubbedFile=old.get("dubbedFile", ""), channelId=channel["id"] if channel else old.get("channelId", ""))
+            video.update(file=old.get("file", ""), dubbedFile=old.get("dubbedFile", ""), qualityVerified=old.get("qualityVerified", False), downloadWidth=old.get("downloadWidth"), downloadHeight=old.get("downloadHeight"), channelId=channel["id"] if channel else old.get("channelId", ""))
             self.store.put("videos", video)
             if in_period(video, bounds):
                 matches.append(video["id"])
@@ -374,7 +389,7 @@ class Engine:
         ids = []
         for video in records.values():
             old = self.store.get("videos", video["id"]) or {}
-            video.update(file=old.get("file", ""), dubbedFile=old.get("dubbedFile", ""),
+            video.update(file=old.get("file", ""), dubbedFile=old.get("dubbedFile", ""), qualityVerified=old.get("qualityVerified", False), downloadWidth=old.get("downloadWidth"), downloadHeight=old.get("downloadHeight"),
                 channelId=old.get("channelId", ""))
             self.store.put("videos", video)
             ids.append(video["id"])
@@ -420,16 +435,28 @@ class Engine:
         video = self.store.get("videos", job["input"]["videoId"])
         if not video:
             raise ValueError("Video không còn trong thư viện.")
-        if video.get("file") and Path(video["file"]).is_file():
+        if not job["input"].get("force") and video.get("file") and Path(video["file"]).is_file():
             self.update_job(job, state="done", progress=100, message="Video đã có trên thiết bị", output=video["file"])
             return
         target_dir = Path(self.settings["downloadDir"]) / safe_name(video.get("author") or "Douyin")
         target_dir.mkdir(parents=True, exist_ok=True)
         target = target_dir / (safe_name(video["id"] + "_" + video["title"]) + ".mp4")
         partial = Path(str(target) + ".part")
-        if not video.get("mediaUrls"):
-            result = await self.browser.collect(video["url"], lambda m: self.update_job(job, message=m), lambda: job["id"] in self.cancelled)
-            video.update(result["videos"][0])
+        # Search/channel previews may expose only a low tier or stale CDN URLs.
+        # Resolve the actual video before every new download, even with cached URLs.
+        async def refresh_source():
+            self.update_job(job, message="Đang lấy nguồn chất lượng cao nhất từ trang video…")
+            result = await self.browser.collect(video["url"], lambda m: self.update_job(job, message=m), lambda: job["id"] in self.cancelled, interactive=True)
+            fresh = next((item for item in result["videos"] if item["id"] == video["id"]), None)
+            if not fresh or not fresh.get("mediaUrls"):
+                raise GuestBlocked("Douyin chưa cung cấp nguồn video để xác định chất lượng cao nhất. Kiểm tra tab video đang mở rồi thử lại.")
+            return fresh
+        fresh = await refresh_source()
+        if video.get("mediaUrls") and video_quality(fresh) < video_quality(video):
+            raise RuntimeError("Nguồn mới thấp hơn chất lượng đã tìm thấy trước đó. App dừng tải thay vì tự hạ chất lượng; hãy thử lại sau.")
+        video.update(fresh)
+        best_quality = video_quality(video)
+        self.store.put("videos", video)
         context = await self.browser.start()
         page = await context.new_page()
         user_agent = await page.evaluate("navigator.userAgent")
@@ -467,21 +494,26 @@ class Engine:
                         with partial.open("rb") as check:
                             if b"ftyp" not in check.read(128):
                                 raise RuntimeError("Dữ liệu tải về không phải MP4 hợp lệ.")
+                        width, height = verify_download_quality(partial, video)
                         partial.replace(target)
-                    await asyncio.to_thread(transfer)
+                        return width, height
+                    width, height = await asyncio.to_thread(transfer)
                     if job["id"] in self.cancelled:
                         raise asyncio.CancelledError()
                     video["file"] = str(target)
+                    video.update(width=width, height=height, qualityVerified=True, downloadWidth=width, downloadHeight=height)
                     self.store.put("videos", video)
-                    self.update_job(job, state="done", progress=100, message="Đã tải video", output=str(target))
+                    self.update_job(job, state="done", progress=100, message=f"Đã tải bản cao nhất Douyin cung cấp · {width}×{height} · giữ nguyên luồng hình", output=str(target))
                     return
                 except Exception as error:
                     last_error = error
                     if job["id"] in self.cancelled:
                         raise asyncio.CancelledError()
             if attempt == 0:
-                result = await self.browser.collect(video["url"], lambda m: self.update_job(job, message=m), lambda: job["id"] in self.cancelled)
-                video.update(result["videos"][0])
+                fresh = await refresh_source()
+                if video_quality(fresh) < best_quality:
+                    raise RuntimeError("Lần làm mới chỉ trả nguồn chất lượng thấp hơn. App dừng tải thay vì tự hạ chất lượng; hãy thử lại sau.")
+                video.update(fresh)
         raise RuntimeError(str(last_error or "Không có địa chỉ video phát công khai."))
 
     async def dub(self, job):
