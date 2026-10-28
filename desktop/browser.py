@@ -12,6 +12,10 @@ class GuestBlocked(RuntimeError):
     pass
 
 
+def _has_no_more(value):
+    return value is False or value == 0 or value == "0"
+
+
 class GuestBrowser:
     def __init__(self, root):
         self.root = Path(root)
@@ -101,7 +105,7 @@ class GuestBrowser:
                 target = video_id_from_url(final_url) or video_id_from_url(douyin_url(url))
                 channel = "/user/" in final_url and not target
                 sec_uid = urlparse(final_url).path.split("/user/")[-1].split("/")[0] if channel else None
-                stale, previous = 0, (-1, -1)
+                stale, previous = 0, (-1, -1, -1)
                 for turn in range(max_scrolls if channel else 12):
                     if cancelled():
                         raise asyncio.CancelledError()
@@ -138,9 +142,12 @@ class GuestBrowser:
                     if target and target in records and (records[target]["mediaUrls"] or records[target]["isImage"]):
                         break
                     progress(f"Đã tìm thấy {len(records)} video · trang {turn + 1}")
-                    if channel and state["listSeen"] and (state["hasMore"] == 0 or state["coveredSince"]):
+                    if channel and state["listSeen"] and (_has_no_more(state["hasMore"]) or state["coveredSince"]):
                         break
-                    current = (len(records), len(seen_cursors))
+                    # A guest page may expose cards in the DOM without an
+                    # aweme/post response. Count those links as page progress,
+                    # otherwise the stale-page guard stops before lazy cards load.
+                    current = (len(records), len(seen_cursors), len(public_links))
                     stale = stale + 1 if current == previous else 0
                     previous = current
                     if stale >= 8 or state["blocked"]:
@@ -150,8 +157,13 @@ class GuestBrowser:
                     await asyncio.gather(*list(pending), return_exceptions=True)
                 values = [v for v in records.values() if (v["id"] == target if target else (not sec_uid or v["secUid"] == sec_uid))]
                 if channel and public_links:
-                    missing = [link for identity, link in public_links.items() if identity not in records][:24]
-                    progress(f"Đang đọc metadata {len(public_links)} video xem trước công khai…")
+                    # A link inside the profile's work list is direct evidence
+                    # that it belongs to this author, even if detail payloads
+                    # omit author metadata.
+                    for identity in public_links:
+                        if identity in records and not records[identity].get("secUid"):
+                            records[identity]["secUid"] = sec_uid
+                    missing = [link for identity, link in public_links.items() if identity not in records]
                     semaphore = asyncio.Semaphore(4)
 
                     async def resolve_preview(link):
@@ -203,15 +215,26 @@ class GuestBrowser:
                                     await asyncio.gather(*list(detail_pending), return_exceptions=True)
                                 await detail_page.close()
 
-                    resolved = await asyncio.gather(*(resolve_preview(link) for link in missing))
-                    for link, video in zip(missing, resolved, strict=True):
-                        if video and (not video.get("secUid") or video.get("secUid") == sec_uid):
-                            records[video["id"]] = video
-                        elif link["id"] not in records:
-                            records[link["id"]] = {"id":link["id"], "title":link["title"] or link["id"],
-                                "createdAt":None, "url":link["url"], "author":"", "secUid":sec_uid,
-                                "cover":"", "mediaUrls":[], "duration":0, "width":0, "height":0,
-                                "bitRate":0, "isImage":False}
+                    # Keep browser usage bounded while covering every visible
+                    # profile card; the old [:24] silently dropped later posts.
+                    for offset in range(0, len(missing), 24):
+                        batch_links = missing[offset:offset + 24]
+                        progress(f"Đang đọc metadata video công khai {offset + 1}–{offset + len(batch_links)} / {len(missing)}…")
+                        resolved = await asyncio.gather(*(resolve_preview(link) for link in batch_links))
+                        found_batch = []
+                        for link, video in zip(batch_links, resolved, strict=True):
+                            if video and (not video.get("secUid") or video.get("secUid") == sec_uid):
+                                video["secUid"] = video.get("secUid") or sec_uid
+                                video["url"] = link["url"]
+                                records[video["id"]] = video
+                                found_batch.append(video)
+                            elif link["id"] not in records:
+                                records[link["id"]] = {"id":link["id"], "title":link["title"] or link["id"],
+                                    "createdAt":None, "url":link["url"], "author":"", "secUid":sec_uid,
+                                    "cover":"", "mediaUrls":[], "duration":0, "width":0, "height":0,
+                                    "bitRate":0, "isImage":False}
+                        if found_batch and on_videos:
+                            on_videos(found_batch)
                     values = [v for v in records.values() if v.get("secUid") == sec_uid]
                 if not values:
                     if channel and state["listError"]:
@@ -219,9 +242,11 @@ class GuestBrowser:
                     if channel and state["loginWall"]:
                         raise GuestBlocked("Douyin yêu cầu đăng nhập để hiện bài đăng của kênh. Phiên khách không tải được video; hãy thử lại khi Douyin cho xem công khai.")
                     raise GuestBlocked("Douyin chưa trả dữ liệu cho phiên khách. Mở cửa sổ khách, kiểm tra CAPTCHA/thông báo trên trang rồi thử lại. Không cần đăng nhập; nội dung yêu cầu đăng nhập không thể tải bằng chế độ khách.")
-                complete = bool(target or (state["listSeen"] and (state["hasMore"] == 0 or state["coveredSince"])) or
+                complete = bool(target or (state["listSeen"] and (_has_no_more(state["hasMore"]) or state["coveredSince"])) or
                     (state["expectedCount"] is not None and len(values) >= state["expectedCount"]))
-                if channel and state["loginWall"]:
+                if channel and state["listError"] and not complete:
+                    warning = f"Douyin báo 服务异常; hiện lấy được {len(values)} video công khai" + (f" trên {state['expectedCount']} tác phẩm" if state["expectedCount"] else "") + ". Chưa thể xác nhận toàn bộ kênh."
+                elif channel and state["loginWall"] and not complete:
                     warning = f"Đang hiển thị {len(values)} video xem trước công khai" + (f" trên {state['expectedCount']} video của kênh" if state["expectedCount"] else " của kênh") + ". Douyin yêu cầu đăng nhập để xem phần còn lại, nên chế độ khách không thể tải đủ danh sách."
                 else:
                     warning = "" if complete else "Chỉ lấy được một phần video công khai. Douyin chưa xác nhận hết trang; chưa thể coi là toàn bộ kênh."

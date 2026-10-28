@@ -15,7 +15,7 @@
 
 - App tạo hồ sơ Chromium khách riêng trong thư mục dữ liệu DT App. Không đọc cookie tài khoản từ Chrome/Edge cá nhân, không gửi cookie hoặc video lên Supabase.
 - Nếu Douyin trả CAPTCHA, giới hạn vùng/mạng hoặc yêu cầu đăng nhập, tác vụ báo bị chặn. Nút **Mở Douyin khách** cho phép xem trạng thái trang; app không tự vượt CAPTCHA hay yêu cầu đăng nhập.
-- Nếu API danh sách bị ẩn trong phiên khách, app còn đọc các thẻ video công khai bên trong danh sách tác phẩm của trang kênh và thử mở từng video để lấy metadata. Không lấy các liên kết gợi ý ở chân trang. Nếu Douyin báo `服务异常` hoặc yêu cầu đăng nhập, app báo bị chặn; khi hiện một phần tác phẩm công khai thì ghi rõ số video đã thấy và **Chưa lấy hết**.
+- Nếu API danh sách bị ẩn trong phiên khách, app còn cuộn danh sách tác phẩm, gom mọi thẻ video công khai và đọc metadata theo lô; không lấy liên kết gợi ý ở chân trang hoặc dừng cứng sau 24 thẻ. Nếu Douyin báo `服务异常` hoặc yêu cầu đăng nhập, app báo bị chặn; khi hiện một phần tác phẩm công khai thì ghi rõ số video đã thấy và **Chưa lấy hết**.
 - Chỉ đánh dấu đã lấy hết kênh nếu endpoint trả `has_more=0` hoặc số video công khai đọc được đạt tổng số Douyin hiển thị. Nếu cuộn bị dừng, hết giới hạn quét hoặc thiếu dữ liệu thì báo **Chưa lấy hết**. Không suy ra “đã lấy tất cả” từ một trang rỗng.
 - Video thiếu ngày đăng không được đưa vào tải theo ngày. Bài ảnh được hiển thị nhưng chưa hỗ trợ xuất thành video. Video đã tải/đang tải được bỏ qua để tránh trùng.
 - Theo dõi kênh phụ thuộc khả năng đọc trang kênh của phiên khách. Tải được video lẻ không có nghĩa Douyin cho phép đọc toàn bộ kênh.

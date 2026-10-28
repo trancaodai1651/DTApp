@@ -82,3 +82,9 @@ Video gốc có 11.054.017 byte, dài 68,6 giây. Mẫu SRT chỉ có lời tron
 - `faster-whisper` 1.2.1 chạy SRT từ audio trên máy và trích đoạn 8 giây làm mẫu giọng. PyAV 19 không tương thích đối số `metadata_errors`; môi trường chép lời ghim `av<19` (kiểm tra thực tế dùng PyAV 18.1.0).
 - OmniVoice đã chạy trên SRT tự nhận dạng và audio mẫu tự trích; kết quả MP4 12.274.308 byte, 68,57 giây. SHA-256 elementary video stream trước/sau giống nhau; âm thanh ghép lại, luồng hình giữ nguyên.
 - `npm run typecheck`, `npm run build` và `py_compile` qua. CI commit `da354fd` build thành công worker Windows x64, macOS Intel và Apple Silicon; bộ cài Windows NSIS, macOS Universal DMG và ZIP đã tải về `release/`. `check-macos-bundle.py` xác nhận app có cả `x86_64`/`arm64`, kiểm tra worker đúng kiến trúc và chạy worker ARM64 trên runner. Unit suites được bỏ qua cho build xem trước của nhánh; chưa kiểm tra GUI/MPS trên máy Mac thật, bộ cài chưa ký/notarize.
+
+## Cập nhật 0.2.3 — quét mọi bài công khai theo chế độ khách
+
+- Sửa bộ quét trang kênh để tính liên kết bài mới trong DOM vào tiến độ phân trang và xử lý metadata xem trước theo lô, bỏ giới hạn 24 bài. Metadata lấy được từ thẻ kênh được chuyển tiếp vào hàng đợi theo dõi.
+- Kiểm tra lại hồ sơ tác giả của video người dùng gửi bằng hồ sơ Chromium khách mới: Douyin trả `服务异常` và danh sách bài có 0 thẻ. Vì thế app vẫn phải báo bị chặn; không thể lấy các bài mà chính Douyin không trả cho khách hoặc yêu cầu tài khoản để xem. Không đăng nhập hay vượt CAPTCHA.
+- `npm run build` và `py_compile` qua; unit suites chưa chạy trong lượt này. Cần quét lại kênh khi Douyin trả danh sách công khai để xác nhận số bài và trạng thái hoàn tất.

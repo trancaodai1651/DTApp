@@ -19,6 +19,6 @@ for architecture in ("x86_64", "aarch64"):
     assert ("arm64" if architecture == "aarch64" else "x86_64") in worker_architectures, worker_architectures
 native = "aarch64" if platform.machine() == "arm64" else "x86_64"
 subprocess.run([sys.executable, str(root / "scripts/check-media-package.py"), "--binary", str(workers[native])], check=True)
-archive = bundle_root / "DT-App-0.2.2-macos-universal.zip"
+archive = bundle_root / "DT-App-0.2.3-macos-universal.zip"
 subprocess.run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive)], check=True)
 print(f"Universal app verified ({architectures}); portable archive: {archive}")
