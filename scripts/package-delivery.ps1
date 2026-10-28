@@ -5,7 +5,7 @@ New-Item -ItemType Directory -Force -Path $taskRelease | Out-Null
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 Add-Type -AssemblyName System.IO.Compression
 
-$taskSourceZip = Join-Path $taskRelease 'DT-App-0.2.1-source.zip'
+$taskSourceZip = Join-Path $taskRelease 'DT-App-0.2.2-source.zip'
 if (Test-Path -LiteralPath $taskSourceZip) { Remove-Item -LiteralPath $taskSourceZip -Force }
 $taskArchive = [IO.Compression.ZipFile]::Open($taskSourceZip, [IO.Compression.ZipArchiveMode]::Create)
 try {
@@ -23,7 +23,7 @@ try {
     }
 } finally { $taskArchive.Dispose() }
 
-$taskWebZip = Join-Path $taskRelease 'DT-App-0.2.1-web.zip'
+$taskWebZip = Join-Path $taskRelease 'DT-App-0.2.2-web.zip'
 if (Test-Path -LiteralPath $taskWebZip) { Remove-Item -LiteralPath $taskWebZip -Force }
 [IO.Compression.ZipFile]::CreateFromDirectory((Join-Path $taskRoot 'dist'), $taskWebZip, [IO.Compression.CompressionLevel]::Optimal, $false)
 Write-Output $taskSourceZip

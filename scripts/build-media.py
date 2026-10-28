@@ -19,4 +19,5 @@ subprocess.run([python, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir
     "--workpath", str(root / "artifacts/media-pyinstaller" / native),
     "--specpath", str(root / "artifacts/media-pyinstaller"),
     "--paths", str(root / "desktop"), "--collect-all", "playwright", "--collect-all", "imageio_ffmpeg",
-    "--add-data", str(root / "desktop/voice_runner.py") + ":.", str(root / "desktop/engine.py")], check=True)
+    "--add-data", str(root / "desktop/voice_runner.py") + ":.",
+    "--add-data", str(root / "desktop/transcribe_runner.py") + ":.", str(root / "desktop/engine.py")], check=True)

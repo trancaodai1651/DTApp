@@ -11,10 +11,12 @@ export interface DouyinChannel {
 export interface DouyinVideo {
   id: string; title: string; url: string; author: string; createdAt: number | null;
   channelId: string; duration: number; isImage: boolean; file: string; dubbedFile: string;
+  width?: number; height?: number; bitRate?: number;
 }
 export interface MediaJob {
   id: string; kind: string; state: string; progress: number; message: string;
   output: string; resultIds?: string[]; createdAt: number;
+  transcript?: string; detectedLanguage?: string; referenceAudio?: string; referenceText?: string;
 }
 export interface MediaSettings { downloadDir: string; voicePython: string; device: string; interval: number }
 export interface MediaSnapshot {

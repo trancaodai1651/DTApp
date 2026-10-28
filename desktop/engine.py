@@ -110,7 +110,7 @@ class Engine:
         public_videos = [{k: v for k, v in video.items() if k != "mediaUrls"} for video in videos]
         jobs = sorted(self.store.all("jobs"), key=lambda j: j["createdAt"], reverse=True)
         return {"channels": channels, "videos": sorted(public_videos, key=lambda v: v.get("createdAt") or 0, reverse=True),
-            "jobs": [{k: v for k, v in j.items() if k != "input"} for j in jobs[:300]], "settings": self.settings,
+            "jobs": [{k: v for k, v in j.items() if k not in {"input", "transcript", "referenceAudio", "referenceText"}} for j in jobs[:300]], "settings": self.settings,
             "runtime": {"browserInstalled": any((self.root / "browsers").glob("chromium-*")),
                 "guestOpen": self.browser.visible and self.browser.context is not None,
                 "voiceConfigured": bool(self.settings["voicePython"]), "dataDir": str(self.root)}}
@@ -132,6 +132,11 @@ class Engine:
             return {"authenticated":self.auth.ready}
         if command == "snapshot":
             return self.snapshot()
+        if command == "transcript_result":
+            job = self.store.get("jobs", payload.get("id", ""))
+            if not job or job.get("kind") != "transcribe" or job.get("state") != "done":
+                raise ValueError("Bản chép lời chưa sẵn sàng.")
+            return {key:job.get(key, "") for key in ("transcript", "detectedLanguage", "referenceAudio", "referenceText")}
         if command == "save_channel":
             return self.save_channel(payload)
         if command == "remove_channel":
@@ -196,6 +201,17 @@ class Engine:
             if not 0 <= float(payload.get("originalVolume", 0)) <= 1:
                 raise ValueError("Âm lượng gốc từ 0 đến 1.")
             return self.queue("dub", payload)
+        if command == "transcribe":
+            video = self.store.get("videos", payload.get("videoId"))
+            if not video or not video.get("file") or not Path(video["file"]).is_file():
+                raise ValueError("Tải video về trước khi chép lời audio.")
+            if not self.settings["voicePython"]:
+                raise ValueError("Chọn Python đã cài OmniVoice trong Cài đặt Douyin trước.")
+            return self.queue("transcribe", payload)
+        if command == "install_asr":
+            if not self.settings["voicePython"] or not Path(self.settings["voicePython"]).is_file():
+                raise ValueError("Cài hoặc chọn Python đã cài OmniVoice trước.")
+            return self.queue("install_asr", {"python":self.settings["voicePython"]})
         if command == "cancel":
             job = self.store.get("jobs", payload["id"])
             if job and job["state"] in ("queued", "running"):
@@ -430,6 +446,40 @@ class Engine:
         self.store.put("videos", video)
         self.update_job(job, state="done", progress=100, message="Đã lồng tiếng và ghép video", output=str(output))
 
+    async def transcribe(self, job):
+        import imageio_ffmpeg
+        video = self.store.get("videos", job["input"]["videoId"])
+        if not video or not Path(video.get("file", "")).is_file():
+            raise ValueError("Không tìm thấy video gốc trên thiết bị.")
+        work = self.root / "speech-jobs" / job["id"]
+        work.mkdir(parents=True, exist_ok=True)
+        result_path = work / "transcript.json"
+        request_path = work / "request.json"
+        request_path.write_text(json.dumps({"video":video["file"], "work":str(work),
+            "result":str(result_path), "modelDir":str(self.root / "speech-models"),
+            "ffmpeg":imageio_ffmpeg.get_ffmpeg_exe()}, ensure_ascii=False), encoding="utf-8")
+        await self.run_process([self.settings["voicePython"], Path(__file__).with_name("transcribe_runner.py"), request_path], job)
+        if not result_path.is_file():
+            raise RuntimeError("Whisper chưa tạo được bản chép lời.")
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        transcript = str(result.get("transcript", ""))
+        if not transcript or len(transcript) > 50000:
+            raise RuntimeError("Bản chép lời rỗng hoặc vượt giới hạn 50.000 ký tự.")
+        self.update_job(job, state="done", progress=100,
+            message=f"Đã chép lời audio · ngôn ngữ {result.get('detectedLanguage') or 'chưa xác định'}.",
+            transcript=transcript, detectedLanguage=result.get("detectedLanguage", ""),
+            referenceAudio=result.get("referenceAudio", ""), referenceText=result.get("referenceText", ""),
+            output="")
+
+    async def install_asr(self, job):
+        python = job["input"]["python"]
+        # faster-whisper 1.2.1 still passes metadata_errors to av.open;
+        # PyAV 19 removed that argument, so keep the compatible major version.
+        await self.run_process([python, "-m", "pip", "install", "--disable-pip-version-check", "faster-whisper==1.2.1", "av<19"], job)
+        await self.run_process([python, "-c", "from faster_whisper import WhisperModel; print('Whisper ready')"], job)
+        self.update_job(job, state="done", progress=100,
+            message="Đã cài nhận dạng Whisper. Model small tải riêng ở lần chép lời đầu tiên.")
+
     async def install_voice(self, job):
         target = self.root / "omnivoice-venv"
         await self.run_process([job["input"]["python"], "-m", "venv", str(target)], job)
@@ -465,6 +515,10 @@ class Engine:
                     await self.download(job)
                 elif job["kind"] == "dub":
                     await self.dub(job)
+                elif job["kind"] == "transcribe":
+                    await self.transcribe(job)
+                elif job["kind"] == "install_asr":
+                    await self.install_asr(job)
                 elif job["kind"] == "guest":
                     await self.browser.open(job["input"]["url"])
                 elif job["kind"] == "close_guest":
@@ -484,9 +538,11 @@ class Engine:
                 self.update_job(job, state="blocked" if isinstance(error, GuestBlocked) else "error", message=str(error)[-2000:])
                 channel_id = job["input"].get("channelId")
                 channel = self.store.get("channels", channel_id) if channel_id else None
-                if channel and job["input"].get("monitor"):
+                if channel and job["kind"] == "scan":
                     failures = min(channel.get("failures", 0) + 1, 8)
-                    channel.update(failures=failures, status=str(error)[:500], nextCheck=time.time() + min(3600, channel["interval"] * 2**failures))
+                    channel.update(failures=failures, status=str(error)[:500], lastCheck=time.time())
+                    if job["input"].get("monitor"):
+                        channel["nextCheck"] = time.time() + min(3600, channel["interval"] * 2**failures)
                     self.store.put("channels", channel)
 
     async def scheduler(self):
@@ -524,7 +580,7 @@ class Engine:
     def start_tasks(self):
         self.tasks = [asyncio.create_task(self.worker({"scan", "guest", "close_guest", "install_browser"})),
             asyncio.create_task(self.worker({"download"})), asyncio.create_task(self.worker({"download"})),
-            asyncio.create_task(self.worker({"dub", "install_voice"})), asyncio.create_task(self.scheduler())]
+            asyncio.create_task(self.worker({"dub", "transcribe", "install_voice", "install_asr"})), asyncio.create_task(self.scheduler())]
 
     async def serve(self):
         self.start_tasks()

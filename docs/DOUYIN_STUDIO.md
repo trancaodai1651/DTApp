@@ -9,23 +9,27 @@
 5. **Kênh tham khảo** giữ tên, link, chủ đề, ghi chú và yêu thích trong SQLite. Có thể xuất danh sách JSON để sao lưu. Tham khảo không đồng nghĩa theo dõi tài khoản trên Douyin.
 6. **Theo dõi mới** dành cho link `/user/…`: chỉ tự tải video đăng từ lúc bật, mặc định kiểm tra mỗi 60 giây, tối thiểu 30 giây. Bấm **Quét / tải kênh** để tải lịch sử. Lỗi làm chu kỳ chậm dần, tối đa một giờ, tránh lặp yêu cầu liên tục.
 7. Đóng cửa sổ chính sẽ thu app xuống khay hệ thống và tiếp tục theo dõi. Chọn **Thoát DT App (dừng theo dõi)** trong menu khay để thoát hẳn. Máy ngủ, mất mạng hoặc thoát app thì không thể tải ngay; app kiểm tra tiếp khi chạy lại. Không có webhook/push từ Douyin.
-8. Video đã tải có nút **Lồng tiếng**. Nhập văn bản tiếng Việt hoặc SRT, chọn giọng tự động/mô tả giọng/giọng mẫu và bản chép lời của mẫu. OmniVoice là TTS; bản này không tự nhận dạng hay dịch lời thoại Trung–Việt.
+8. Video đã tải có nút **Lồng tiếng**. Bấm **Chép lời audio gốc** để tạo SRT có mốc thời gian bằng Whisper; app chọn một đoạn lời gốc làm giọng mẫu OmniVoice. Có thể sửa/dịch SRT trước khi xuất giọng mới. Bản chép lời chạy trên máy; bản dịch Trung–Việt hiện cần người dùng sửa/dịch nội dung.
 
 ## Giới hạn phiên khách
 
 - App tạo hồ sơ Chromium khách riêng trong thư mục dữ liệu DT App. Không đọc cookie tài khoản từ Chrome/Edge cá nhân, không gửi cookie hoặc video lên Supabase.
 - Nếu Douyin trả CAPTCHA, giới hạn vùng/mạng hoặc yêu cầu đăng nhập, tác vụ báo bị chặn. Nút **Mở Douyin khách** cho phép xem trạng thái trang; app không tự vượt CAPTCHA hay yêu cầu đăng nhập.
-- Chỉ đánh dấu đã lấy hết kênh nếu endpoint danh sách trả `has_more=0`. Nếu cuộn bị dừng, hết giới hạn quét hoặc thiếu dữ liệu thì báo **Chưa lấy hết**. Không suy ra “đã lấy tất cả” từ một trang rỗng.
+- Nếu API danh sách bị ẩn trong phiên khách, app còn đọc các thẻ video công khai bên trong danh sách tác phẩm của trang kênh và thử mở từng video để lấy metadata. Không lấy các liên kết gợi ý ở chân trang. Nếu Douyin báo `服务异常` hoặc yêu cầu đăng nhập, app báo bị chặn; khi hiện một phần tác phẩm công khai thì ghi rõ số video đã thấy và **Chưa lấy hết**.
+- Chỉ đánh dấu đã lấy hết kênh nếu endpoint trả `has_more=0` hoặc số video công khai đọc được đạt tổng số Douyin hiển thị. Nếu cuộn bị dừng, hết giới hạn quét hoặc thiếu dữ liệu thì báo **Chưa lấy hết**. Không suy ra “đã lấy tất cả” từ một trang rỗng.
 - Video thiếu ngày đăng không được đưa vào tải theo ngày. Bài ảnh được hiển thị nhưng chưa hỗ trợ xuất thành video. Video đã tải/đang tải được bỏ qua để tránh trùng.
 - Theo dõi kênh phụ thuộc khả năng đọc trang kênh của phiên khách. Tải được video lẻ không có nghĩa Douyin cho phép đọc toàn bộ kênh.
+- Bộ tải xếp biến thể `bit_rate` theo độ phân giải, rồi bitrate, thử bản cao nhất trước và giữ nguyên luồng video khi lưu. Đây là chất lượng cao nhất Douyin đưa ra qua phiên khách, không khẳng định là file master/camera gốc.
 
 ## OmniVoice
 
-Nguồn tích hợp: [k2-fsa/OmniVoice](https://github.com/k2-fsa/OmniVoice), cố định commit `08be0b4ccbac3e13e374e86fbfead4b4cac343e2`. API dùng `OmniVoice.from_pretrained`, `generate`, `language`, `ref_audio`, `ref_text`, `instruct`, `num_step`, theo mã upstream.
+Nguồn tích hợp: [k2-fsa/OmniVoice](https://github.com/k2-fsa/OmniVoice), cố định commit `08be0b4ccbac3e13e374e86fbfead4b4cac343e2`. API dùng `OmniVoice.from_pretrained`, `generate`, `language`, `ref_audio`, `ref_text`, `instruct`, `num_step`, theo mã upstream. Chép lời dùng [SYSTRAN/faster-whisper](https://github.com/SYSTRAN/faster-whisper) 1.2.1 và giữ PyAV dưới phiên bản 19 cho tương thích.
 
 - Có Python 3.10+ trên máy: chọn thiết bị CUDA/MPS/CPU trong Cài đặt rồi **Cài OmniVoice vào môi trường riêng**, chọn tập tin Python. App tạo môi trường `omnivoice-venv` trong dữ liệu người dùng, cài PyTorch 2.8 và upstream, kiểm tra import rồi lưu cấu hình. Không cần Git trên máy client. Xem tiến độ/lỗi ở **Tác vụ**.
 - Người phát triển cũng có thể chạy `python scripts/setup-omnivoice.py --device cuda` (Windows NVIDIA), `--device mps` (Apple Silicon), hoặc `--device cpu`, rồi chọn Python được in ra trong Cài đặt.
 - Model tải ở lượt tạo giọng đầu; cần mạng và đủ đĩa/RAM/VRAM. TTS chạy ngoài worker tải video, nạp model một lần cho các đoạn của một tác vụ rồi giải phóng khi tiến trình thoát.
+- Trong **Cài đặt Douyin**, bấm **Cài Whisper chép lời từ audio** sau khi chọn Python OmniVoice. Lần đầu bấm **Chép lời audio gốc**, Whisper small tải mô hình riêng (vài trăm MB) vào dữ liệu app; xử lý bằng CPU int8 để chạy được trên Windows và Mac. Tệp SRT và đoạn audio mẫu được điền vào cửa sổ lồng tiếng để người dùng chỉnh trước khi xuất.
+- Whisper nhận dạng nguyên ngôn ngữ trong video, không tự dịch. Khi thay tiếng Trung bằng tiếng Việt, sửa/dịch SRT, chọn **Tiếng Việt**, rồi giữ đoạn audio gốc làm mẫu giọng nếu muốn.
 - macOS Universal hỗ trợ giao diện/tải video trên Intel và Apple Silicon. PyTorch mới không cung cấp wheel macOS Intel chính thức, trong khi OmniVoice yêu cầu Torch >=2.4: cài giọng tự động chỉ hỗ trợ Windows/Apple Silicon. Intel cần Python/PyTorch tự biên dịch tương thích; không cam kết OmniVoice cục bộ trên Intel khi chưa thử thực tế.
 - SRT căn từng đoạn vào mốc thời gian, văn bản thường căn theo thời lượng toàn video bằng `atempo`. Từ chối khi cần thay tốc độ quá 4 lần để không âm thầm cắt lời. Không nhận SRT chồng thời gian hoặc vượt độ dài video.
 - Giữ luồng hình gốc bằng `-c:v copy`, xuất âm AAC và MP4 mới, giữ metadata gốc (bao gồm nhãn AIGC nếu có). **Giữ âm gốc** giữ cả giọng cũ và nhạc, không phải tách nền nhạc.
@@ -47,7 +51,7 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run pack:mac
 ```
 
-CI `.github/workflows/desktop.yml` build Python worker trên Windows x64, macOS Intel, macOS ARM64; ghép hai worker vào tài nguyên của một app Tauri Universal. Tauri chọn worker theo kiến trúc tiến trình. `.tar` giữ quyền thực thi khi chuyển artifact macOS. Build Universal và DMG phải chạy trên macOS. Bộ cài chưa ký số/notarize.
+CI `.github/workflows/desktop.yml` build Python worker trên Windows x64, macOS Intel, macOS ARM64; ghép hai worker vào tài nguyên của một app Tauri Universal. Push lên nhánh `codex/douyin-google-tauri` tạo artifact xem trước và bỏ qua unit suites; tag phát hành hoặc workflow thủ công (mặc định bật test) sẽ chạy unit suites. Tauri chọn worker theo kiến trúc tiến trình. `.tar` giữ quyền thực thi khi chuyển artifact macOS. Build Universal và DMG phải chạy trên macOS. Bộ cài chưa ký số/notarize.
 
 Web vẫn có poster/bio; Douyin trên web chỉ hiện hướng dẫn dùng desktop. Dữ liệu poster/API cũ của Electron nằm trong profile Electron khác origin: xuất JSON dự án bằng bản cũ rồi nhập vào bản mới. Không tự chuyển khóa API đã mã hóa của Electron; nhập lại qua kho mã hóa Web Crypto/IndexedDB của Tauri.
 

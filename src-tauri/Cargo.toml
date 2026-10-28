@@ -1,6 +1,6 @@
 [package]
 name = "dtapp"
-version = "0.2.1"
+version = "0.2.2"
 description = "DT App creative desktop tools"
 authors = ["DT Studio"]
 edition = "2021"

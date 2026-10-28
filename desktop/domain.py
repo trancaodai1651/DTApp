@@ -91,6 +91,60 @@ def parse_script(value):
 def aweme_records(payload):
     """Read both public post-list and detail payloads without retaining cookies."""
     found = {}
+    def urls_for(address):
+        if not isinstance(address, dict):
+            return []
+        urls = address.get("url_list", address.get("urlList", []))
+        if isinstance(urls, str):
+            return [urls]
+        return [url for url in urls if isinstance(url, str)] if isinstance(urls, list) else []
+
+    def quality_candidates(video):
+        candidates = []
+        variants = video.get("bit_rate", video.get("bitRate", [])) or []
+        if isinstance(variants, dict):
+            variants = [variants]
+        if isinstance(variants, list):
+            for variant in variants:
+                if not isinstance(variant, dict):
+                    continue
+                address = variant.get("play_addr", variant.get("playAddr")) or variant.get("play_addr_265", {})
+                width = variant.get("width") or video.get("width", 0) or 0
+                height = variant.get("height") or video.get("height", 0) or 0
+                bitrate = variant.get("bit_rate", variant.get("bitRate", 0)) or 0
+                try:
+                    width, height, bitrate = int(width), int(height), int(float(bitrate))
+                    score = (width * height, bitrate)
+                except (TypeError, ValueError):
+                    width, height, bitrate, score = 0, 0, 0, (0, 0)
+                candidates.append((score, urls_for(address), width, height, bitrate))
+
+        # Douyin exposes a download address separately on some posts. Keep it as
+        # a fallback after the explicit quality ladder, then use play_addr.
+        for address_name in ("download_addr", "downloadAddr", "play_addr", "playAddr"):
+            address = video.get(address_name)
+            if not address:
+                continue
+            width, height = video.get("width", 0) or 0, video.get("height", 0) or 0
+            try:
+                width, height = int(width), int(height)
+                score = (width * height, 0)
+            except (TypeError, ValueError):
+                score = (0, 0)
+            candidates.append((score, urls_for(address), width, height, 0))
+
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        output, seen = [], set()
+        best = None
+        for _, urls, width, height, bitrate in candidates:
+            for url in urls:
+                if url not in seen:
+                    seen.add(url)
+                    output.append(url)
+                    if best is None:
+                        best = (width, height, bitrate)
+        return output, best or (video.get("width", 0), video.get("height", 0), 0)
+
     def visit(item):
         if isinstance(item, list):
             for entry in item:
@@ -100,14 +154,14 @@ def aweme_records(payload):
             if identity.isdigit() and ("video" in item or "images" in item):
                 author = item.get("author") or {}
                 video = item.get("video") or {}
-                address = video.get("play_addr") or video.get("playAddr") or {}
-                urls = address.get("url_list", address.get("urlList", []))
+                urls, quality = quality_candidates(video)
                 cover = video.get("cover") or {}
                 found[identity] = {"id": identity, "title": item.get("desc", "") or identity,
                     "createdAt": item.get("create_time", item.get("createTime")),
                     "url": f"https://www.douyin.com/video/{identity}", "author": author.get("nickname", ""),
                     "secUid": author.get("sec_uid", author.get("secUid", "")),
                     "cover": (cover.get("url_list") or [""])[0], "mediaUrls": urls,
+                    "width": quality[0], "height": quality[1], "bitRate": quality[2],
                     "duration": video.get("duration", 0)/1000, "isImage": bool(item.get("images")) and not urls}
                 return
             for child in item.values():

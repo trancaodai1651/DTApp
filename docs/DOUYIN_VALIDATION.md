@@ -19,8 +19,8 @@ Link Douyin người dùng → bộ xử lý media thật → phiên Chromium kh
 | Giữ metadata nguồn | PASS | Bản demo cuối giữ metadata AIGC bằng `map_metadata` và `use_metadata_tags` |
 | Worker đóng gói | PASS | Binary PyInstaller nhận JSON-lines, SQLite, gọi OmniVoice thật trong môi trường riêng và dùng FFmpeg đi kèm để xuất MP4; `shutdown` thoát mã 0 |
 | Bộ cài Windows x64 | BUILD PASS | Tauri release + NSIS tạo bộ cài khoảng 55,39 MiB; chưa cài qua UI khi máy đang khóa |
-| UI Tauri | PARTIAL | App native đã khởi động; kiểm tra tương tác/screenshot bị dừng vì Windows đang khóa |
-| macOS Universal | PENDING macOS runner/device | Đã cấu hình ghép worker Intel/ARM64 vào app Universal; chưa chạy build hoặc runtime trên macOS từ máy Windows này |
+| UI Tauri | PASS Google / tải lẻ / bookmark | Đăng nhập Google bằng Edge, quyền quản trị, khôi phục phiên sau mở lại, cài Chromium, quét/tải video và lưu kênh tác giả đã xác minh qua UI native |
+| macOS Universal | BUILD + WORKER PASS; GUI PENDING | CI ghép app x86_64/arm64, kiểm tra hai worker, thực thi worker ARM64 từ `.app`; chưa kiểm tra GUI/MPS trên Mac của người dùng |
 
 ## Tệp bằng chứng cục bộ
 
@@ -37,17 +37,16 @@ Video gốc có 11.054.017 byte, dài 68,6 giây. Mẫu SRT chỉ có lời tron
 
 ## Kiểm tra mã
 
-- `npm test`: 9/9 kiểm thử poster/API/bio đã qua, bao gồm U²-Net thật.
-- `npm run test:media`: 11/11 kiểm thử mới đã qua: URL người dùng, chặn URL giả mạo, lịch ngày/tuần/tháng, SRT, MP4/CDN, SQLite/bookmark, scheduler, chống tải trùng, hủy tác vụ và phục hồi sau gián đoạn.
+- `npm test`: 12/12 kiểm thử poster/API/bio/chính sách Google đã qua, bao gồm U²-Net thật.
+- `npm run test:media`: 15/15 kiểm thử đã qua: URL người dùng, chặn URL giả mạo, lịch ngày/tuần/tháng, SRT, MP4/CDN, SQLite/bookmark, scheduler, chống tải trùng, hủy tác vụ, xác thực Google, khóa phiên và phục hồi sau gián đoạn.
 - `npm run build`: TypeScript và Vite đã qua.
 - `cargo check --manifest-path src-tauri/Cargo.toml`: đã qua sau phần Tauri/khay hệ thống.
 - `git diff --check`: đã qua.
 
 ## Các bước còn cần môi trường bên ngoài
 
-- Mở khóa Windows để hoàn tất thao tác UI native và chụp giao diện. Không coi việc app biên dịch được là đã kiểm tra UI hoàn chỉnh.
 - Kiểm tra trang kênh trong phiên khách có dữ liệu. Tải video lẻ đã hoạt động nhưng không chứng minh quyền xem/tải toàn bộ kênh ở chế độ khách.
-- Chạy CI/macOS thật để xác minh Universal, Intel, Apple Silicon, MPS và quyền thực thi các worker. OmniVoice tự cài trên Mac Intel chưa được hỗ trợ bởi wheel PyTorch mới chính thức.
+- Kiểm tra GUI và OmniVoice MPS trên thiết bị Mac thật; build Universal và thực thi worker đã qua CI. OmniVoice tự cài trên Mac Intel chưa được hỗ trợ bởi wheel PyTorch mới chính thức.
 - Ký số/notarize cần chứng chỉ chủ dự án; bộ cài kiểm thử chưa ký số.
 
 ## Cập nhật 0.2.1 — bắt buộc Google
@@ -71,3 +70,15 @@ Video gốc có 11.054.017 byte, dài 68,6 giây. Mẫu SRT chỉ có lời tron
 - Người dùng báo link `/auth/v1/authorize` có email gợi ý vẫn treo. Kiểm tra HTTP độc lập, không dùng cookie/token người dùng: endpoint công khai trả HTTP 302 sang `accounts.google.com` trong 0,32 giây; DNS và HTTPS tới Supabase/Google phản hồi. Đây chỉ là kiểm tra kết nối/chuyển hướng, chưa chứng minh đăng nhập thành công hay xác định lỗi Chrome.
 - Thêm lựa chọn trình duyệt Microsoft Edge trên Windows, phạm vi mở URL giới hạn project Supabase hiện tại. Cần người dùng hoàn tất Google để xác minh callback/quyền và Studio sau đăng nhập.
 - Môi trường dev từng bị Vite dừng do EBUSY khi theo dõi bộ cài trong `release/`; đã bỏ theo dõi `release/` và `reports/`, khởi động lại dev. Không khẳng định đây là nguyên nhân khiến trình duyệt treo.
+
+- Người dùng đã hoàn tất Google bằng Edge. Đã xác minh native hiện đúng email, vai trò quản trị và mở Studio; worker yêu cầu Google đã nhận phiên hợp lệ, cài Chromium thành công. Đóng/mở lại app khôi phục phiên, không cần đăng nhập lại.
+- Kiểm tra UI phát hiện hai host `v5-dy-ov-experiment.zjcdn.com` / `v5-hl-mly-ov.zjcdn.com` do trang Douyin trả về chưa có trong allowlist. Đã thêm `zjcdn.com` với kiểm tra HTTPS/đuôi miền hiện có, bổ sung kiểm thử chặn HTTP và miền giả mạo. Tải lại qua UI thành công: video `7681298667634390739`, 11.054.017 byte, 68,60 giây; FFmpeg đọc toàn bộ luồng hình không lỗi, SHA-256 tệp `c366c9b24e6d98e059942848f897e13d3b7696194e866cc4bf657e4a9d78525d`.
+- UI native xác nhận 1 kênh tham khảo và 1 video đã tải. Báo cáo `artifacts/google-auth/tauri-google-runtime-report.json`, ảnh `artifacts/google-auth/dtapp-google-download-pass.png`. SQLite không có trường token Google. Hai tác vụ tải lỗi trước bản sửa vẫn được giữ trong lịch sử.
+
+## Cập nhật 0.2.2 — chất lượng nguồn, xem trước kênh và chép lời
+
+- Bộ phân tích metadata xếp các URL `bit_rate` theo độ phân giải rồi bitrate, thử bản cao nhất trước, giữ URL dự phòng và không mã hóa lại video. Tải live bằng worker khách của link người dùng: MP4 19.163.250 byte, 3840×2160, 2.235.791 bit/s, 68,57 giây; FFmpeg giải mã luồng hình thành công. Đây là bản cao nhất Douyin đưa ra trong response, không khẳng định file master.
+- Quét trang kênh chỉ nhận thẻ nằm trong `user-post-list`, không nhận liên kết gợi ý ở `page-footer`; khi có thẻ công khai thì app thử lấy metadata video. Lần kiểm tra khách hiện tại: Douyin báo `服务异常`, trang ghi 85 tác phẩm nhưng danh sách tác phẩm có 0 thẻ; API trang hồ sơ trả 200/status 0, không phát yêu cầu `/aweme/post/`. App báo bị chặn và không nhận nhầm video gợi ý thành bài kênh. Bằng chứng tóm tắt `artifacts/douyin-0.2.2-live-check.json`.
+- `faster-whisper` 1.2.1 chạy SRT từ audio trên máy và trích đoạn 8 giây làm mẫu giọng. PyAV 19 không tương thích đối số `metadata_errors`; môi trường chép lời ghim `av<19` (kiểm tra thực tế dùng PyAV 18.1.0).
+- OmniVoice đã chạy trên SRT tự nhận dạng và audio mẫu tự trích; kết quả MP4 12.274.308 byte, 68,57 giây. SHA-256 elementary video stream trước/sau giống nhau; âm thanh ghép lại, luồng hình giữ nguyên.
+- `npm run typecheck`, `npm run build` và `py_compile` qua. Worker Windows x64 đã được dựng lại; bộ cài NSIS 0.2.2 được đóng gói lại từ worker đó. Workflow `.github/workflows/desktop.yml` đã có job dựng worker Intel/ARM64 và app Tauri Universal trên runner macOS; chưa chạy CI phát hành hoặc kiểm tra GUI/MPS trên Mac thật. Không chạy lại bộ unit test trong lượt này.
