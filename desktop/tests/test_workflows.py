@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from engine import Engine
 from browser import GuestBrowser, GuestBlocked
-from translate_runner import translated_captions, to_srt
+from translate_runner import translated_captions, to_srt, translation_valid
 from domain import parse_script
 from transcribe_runner import bounded_segments
 
@@ -124,6 +124,12 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         result=bounded_segments([Chunk(0,1,'first'),Chunk(1,2.28,'last'),Chunk(2.5,3,'outside')],2.04)
         self.assertEqual([chunk.text for chunk in result],['first','last'])
         self.assertEqual(result[-1].end,2.04)
+
+    def test_vietnamese_translation_cannot_leave_chinese_subtitles_untranslated(self):
+        self.assertTrue(translation_valid('Sau khi chần nước, tiếp tục nấu.','vi'))
+        self.assertFalse(translation_valid('焯完水後還得接著煮','vi'))
+        self.assertFalse(translation_valid('','vi'))
+        self.assertFalse(translation_valid('<think>reason</think>','vi'))
 
     def test_frozen_worker_uses_bundled_chromium_without_installing(self):
         binary=self.root/'bin/engine.exe'

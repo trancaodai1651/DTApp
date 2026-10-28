@@ -571,8 +571,11 @@ class Engine:
 
     async def ensure_speech_runtime(self, job):
         self.update_job(job, message="Đang chuẩn bị nhận dạng audio và dịch phụ đề…")
+        probe = "import faster_whisper, torch; from transformers import AutoModelForCausalLM, AutoTokenizer"
+        if self.settings["device"] != "cpu":
+            probe += "\nif torch.cuda.is_available(): import bitsandbytes"
         check = await asyncio.to_thread(subprocess.run,
-            [self.settings["voicePython"], "-c", "import faster_whisper; from transformers import AutoModelForCausalLM, AutoTokenizer"],
+            [self.settings["voicePython"], "-c", probe],
             capture_output=True, timeout=60, **HIDDEN)
         if check.returncode:
             await self.install_asr(job, finalize=False)
@@ -622,6 +625,10 @@ class Engine:
     async def install_asr(self, job, finalize=True):
         python = job["input"].get("python") or self.settings["voicePython"]
         await self.run_process([python, "-m", "pip", "install", "--disable-pip-version-check", "faster-whisper==1.2.1", "av<19"], job)
+        if self.settings["device"] != "cpu":
+            cuda = await asyncio.to_thread(subprocess.run, [python, "-c", "import torch; raise SystemExit(0 if torch.cuda.is_available() else 1)"], capture_output=True, timeout=60, **HIDDEN)
+            if cuda.returncode == 0:
+                await self.run_process([python, "-m", "pip", "install", "--disable-pip-version-check", "bitsandbytes==0.48.2"], job)
         await self.run_process([python, "-c", "from faster_whisper import WhisperModel; from transformers import AutoModelForCausalLM; print('Speech and translation ready')"], job)
         self.update_job(job, **({"state":"done", "progress":100} if finalize else {}),
             message="Đã cài Whisper và bộ dịch phụ đề. Model tải ở lần sử dụng đầu tiên.")

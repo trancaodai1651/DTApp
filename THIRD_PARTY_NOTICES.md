@@ -30,4 +30,6 @@ Full dependency licenses remain in installed package directories. Tauri worker r
 
 ### Chromium and local subtitle translation (0.2.8)
 - Chromium installed by Playwright 1.56.0 is included per native architecture in the desktop resources. Chromium and its included dependencies retain the notices distributed in the browser bundle. https://playwright.dev/python/docs/browsers
-- Subtitle translation downloads `Qwen/Qwen3-1.7B` on first use (Apache-2.0 model license); weights are cached locally, not included in the application installer. https://huggingface.co/Qwen/Qwen3-1.7B
+- Subtitle translation downloads `Qwen/Qwen3-4B-Instruct-2507` on first use (Apache-2.0 model license); weights are cached locally, not included in the application installer. https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507
+
+- bitsandbytes 0.48.2 (MIT) is installed in the optional speech environment on CUDA hosts for NF4 translation inference; it is not bundled into the desktop worker.
