@@ -30,7 +30,7 @@ class MediaRedirects(HTTPRedirectHandler):
 
 def check_media_url(value):
     url = urlparse(value)
-    allowed = ("douyinvod.com", "douyin.com", "douyinpic.com", "byteimg.com", "bytecdn.cn", "snssdk.com", "amemv.com", "ibytedtos.com", "pstatp.com", "ixigua.com", "douyincdn.com", "bytecdn.com", "bytedance.com")
+    allowed = ("douyinvod.com", "douyin.com", "douyinpic.com", "byteimg.com", "bytecdn.cn", "snssdk.com", "amemv.com", "ibytedtos.com", "pstatp.com", "ixigua.com", "douyincdn.com", "bytecdn.com", "bytedance.com", "zjcdn.com")
     if url.scheme != "https" or url.username or url.password or url.port not in (None, 443) or not any(url.hostname == h or (url.hostname or "").endswith("." + h) for h in allowed):
         raise ValueError("Địa chỉ video không thuộc CDN Douyin được hỗ trợ.")
 

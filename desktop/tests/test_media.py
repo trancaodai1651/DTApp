@@ -53,7 +53,9 @@ class DomainTests(unittest.TestCase):
         self.assertNotIn("/", safe_name("../CON/a<>x"))
         self.assertTrue(safe_name("CON").startswith("video_"))
         check_media_url("https://v1.douyinvod.com/video.mp4")
-        for url in ("http://v1.douyinvod.com/", "https://127.0.0.1/", "https://v1.douyinvod.com.evil.test/x"):
+        check_media_url("https://v5-dy-ov-experiment.zjcdn.com/video.mp4")
+        check_media_url("https://v5-hl-mly-ov.zjcdn.com/video.mp4")
+        for url in ("http://v1.douyinvod.com/", "https://127.0.0.1/", "https://v1.douyinvod.com.evil.test/x", "https://v5-hl-mly-ov.zjcdn.com.evil.test/x", "http://v5-hl-mly-ov.zjcdn.com/x"):
             with self.assertRaises(ValueError):
                 check_media_url(url)
 
