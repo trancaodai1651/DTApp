@@ -183,10 +183,27 @@ class Engine:
             date_bounds(payload.get("mode", "all"), payload.get("anchor"), payload.get("end"))
             return self.queue("scan", {**payload, "url": url})
         if command == "search":
-            query = str(payload.get("query", "")).strip()
-            if not query or len(query) > 120 or any(ord(char) < 32 for char in query):
-                raise ValueError("Nhập từ khóa tìm kiếm Douyin từ 1 đến 120 ký tự.")
-            return self.queue("search", {"query": query})
+            raw_queries = payload.get("queries")
+            if raw_queries is None:
+                raw_queries = [{"language": "auto", "query": payload.get("query", "")}]
+            if not isinstance(raw_queries, list) or len(raw_queries) > 3:
+                raise ValueError("Tìm kiếm tối đa ba từ khóa, mỗi ngôn ngữ một từ khóa.")
+            queries, seen = [], set()
+            for item in raw_queries:
+                if not isinstance(item, dict) or item.get("language") not in ("vi", "en", "zh", "auto"):
+                    raise ValueError("Ngôn ngữ từ khóa tìm kiếm không hợp lệ.")
+                query = str(item.get("query", "")).strip()
+                if not query:
+                    continue
+                if len(query) > 120 or any(ord(char) < 32 for char in query):
+                    raise ValueError("Mỗi từ khóa cần từ 1 đến 120 ký tự.")
+                identity = query.casefold()
+                if identity not in seen:
+                    queries.append({"language": item["language"], "query": query})
+                    seen.add(identity)
+            if not queries:
+                raise ValueError("Nhập ít nhất một từ khóa tiếng Việt, English hoặc 中文.")
+            return self.queue("search", {"queries": queries})
         if command == "download":
             ids = payload.get("ids", [])
             if not isinstance(ids, list) or not ids or len(ids) > 10000:
@@ -333,20 +350,38 @@ class Engine:
             resultIds=matches)
 
     async def search(self, job):
-        query = job["input"]["query"]
-        result = await self.browser.search(query,
-            lambda message: self.update_job(job, message=message),
-            lambda: job["id"] in self.cancelled)
+        queries = job["input"].get("queries") or [{"language": "auto", "query": job["input"].get("query", "")}]
+        records, warnings = {}, []
+        language_names = {"vi": "Tiếng Việt", "en": "English", "zh": "中文", "auto": "từ khóa"}
+        for index, item in enumerate(queries, 1):
+            query = item["query"]
+            language = item.get("language", "auto")
+            try:
+                result = await self.browser.search(query,
+                    lambda message, i=index, lang=language: self.update_job(job,
+                        message=f"Tìm {language_names.get(lang, lang)} ({i}/{len(queries)}) · {message}"),
+                    lambda: job["id"] in self.cancelled)
+            except GuestBlocked as error:
+                warnings.append(f"{language_names.get(language, language)}: {error}")
+                break
+            for video in result["videos"]:
+                records[video["id"]] = video
+            if result["warning"]:
+                warnings.append(f"{language_names.get(language, language)}: {result['warning']}")
+
+        if not records:
+            raise GuestBlocked("; ".join(warnings) or "Douyin chưa trả kết quả tìm kiếm công khai.")
         ids = []
-        for video in result["videos"]:
+        for video in records.values():
             old = self.store.get("videos", video["id"]) or {}
             video.update(file=old.get("file", ""), dubbedFile=old.get("dubbedFile", ""),
                 channelId=old.get("channelId", ""))
             self.store.put("videos", video)
             ids.append(video["id"])
-        warning = result["warning"]
+        warning = " ".join(warnings)
+        searched = " + ".join(f"{language_names.get(item.get('language', 'auto'), item.get('language', 'auto'))}: {item['query']}" for item in queries)
         self.update_job(job, state="partial" if warning else "done", progress=100,
-            message=f'Tìm thấy {len(ids)} video công khai cho “{query}”. ' + warning,
+            message=f'Tìm thấy {len(ids)} video công khai cho {searched}. ' + warning,
             resultIds=ids)
 
     async def run_process(self, args, job):

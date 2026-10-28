@@ -96,3 +96,10 @@ Video gốc có 11.054.017 byte, dài 68,6 giây. Mẫu SRT chỉ có lời tron
 - Thêm hai chế độ OmniVoice: thuyết minh trộn giọng mới với audio gốc ở mức âm lượng chọn được (mặc định 25%); lồng tiếng thay audio gốc. Cả hai bắt buộc chép audio của video trước để tạo SRT và trích đoạn audio cùng bản chép đồng bộ làm mẫu giọng. Bản chép không tự dịch; người dùng sửa/dịch SRT và chọn ngôn ngữ đầu ra. Luồng hình gốc được copy nguyên.
 - Kiểm tra trang tìm kiếm Douyin bằng hồ sơ khách sạch trên máy Windows ngày 2026-10-28: Douyin trả trang xác minh CAPTCHA trước khi hiển thị kết quả. Vì vậy luồng tìm kiếm thật chưa thể xác nhận trên phiên khách hiện tại; khi gặp trạng thái này, mở Douyin khách để tự xử lý xác minh nếu trang cho phép rồi tìm lại.
 - Xác minh mã nguồn: `npm run build`, `py_compile` cho worker và `git diff --check` đều qua. Chưa tạo lại bộ cài Windows/macOS từ mã nguồn 0.2.4.
+
+## Cập nhật 0.2.5 — sửa lệnh tìm kiếm và từ khóa đa ngôn ngữ
+
+- Sửa allowlist của cầu Tauri để chuyển tiếp `search`, `transcribe` và `install_asr` tới worker; trước đó giao diện có ô tìm kiếm nhưng Rust trả “Lệnh không được hỗ trợ.” trước khi worker nhận lệnh.
+- Tìm kiếm nhận tối đa một từ khóa cho mỗi ngôn ngữ tiếng Việt, English và 中文. Worker tìm lần lượt trong phiên khách, gộp kết quả theo ID và bỏ trùng; người dùng có thể nhập một hoặc nhiều trường. App gửi nguyên văn từng từ khóa, không tự dịch.
+- `npm run build`, `py_compile` cho worker và `git diff --check` đều qua trên workspace. Kiểm tra đóng gói và lấy bộ cài 0.2.5 sẽ được ghi nhận sau CI.
+- Guest search vẫn phụ thuộc kết quả Douyin công khai; CAPTCHA, giới hạn khách và nội dung yêu cầu đăng nhập có thể khiến Douyin không trả kết quả.
