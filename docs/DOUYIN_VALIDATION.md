@@ -63,3 +63,11 @@ Video gốc có 11.054.017 byte, dài 68,6 giây. Mẫu SRT chỉ có lời tron
 
 - Kiểm thử đăng xuất khi đang chạy tác vụ phát hiện worker nuốt tín hiệu hủy và chờ mãi. Đã sửa để thoát đúng lane, giữ hàng đợi khóa trước lần đăng nhập sau; kiểm thử có timeout 2 giây đã qua.
 - CI bổ sung thực thi worker PyInstaller trên từng hệ điều hành, kiểm tra mặc định cần Google và không ghi bookmark khi chưa xác thực. macOS Universal còn kiểm tra `lipo` cho app/2 worker, chạy worker từ bên trong `.app` rồi xuất thêm ZIP portable.
+
+## Cập nhật chẩn đoán 2026-10-28
+
+- CI [40483265522](https://github.com/trancaodai1651/DTApp/actions/runs/40483265522) thành công cả 5 job trên commit `02ad02f`: worker Windows x64, macOS Intel, macOS ARM64; bộ cài NSIS; app/DMG/ZIP macOS Universal. Kiểm tra `lipo` xác nhận binary Tauri gồm arm64/x86_64, cả hai worker có đúng kiến trúc; worker ARM64 chạy thực tế từ trong `.app`, từ chối truy cập không Google và thoát sạch. Chưa kiểm tra GUI hoặc OmniVoice MPS trên thiết bị Mac của người dùng.
+- Quan sát kênh công khai bằng Chrome khi chưa đăng nhập Douyin: trang ghi 84 tác phẩm, hiện một phần liên kết video và thông báo `登录后查看更多作品` (đăng nhập để xem thêm). Không thể xác nhận tải đủ kênh trong phiên khách. Bằng chứng `artifacts/douyin-live/channel-guest-observation.json` và `channel-guest-login-wall.jpg`.
+- Người dùng báo link `/auth/v1/authorize` có email gợi ý vẫn treo. Kiểm tra HTTP độc lập, không dùng cookie/token người dùng: endpoint công khai trả HTTP 302 sang `accounts.google.com` trong 0,32 giây; DNS và HTTPS tới Supabase/Google phản hồi. Đây chỉ là kiểm tra kết nối/chuyển hướng, chưa chứng minh đăng nhập thành công hay xác định lỗi Chrome.
+- Thêm lựa chọn trình duyệt Microsoft Edge trên Windows, phạm vi mở URL giới hạn project Supabase hiện tại. Cần người dùng hoàn tất Google để xác minh callback/quyền và Studio sau đăng nhập.
+- Môi trường dev từng bị Vite dừng do EBUSY khi theo dõi bộ cài trong `release/`; đã bỏ theo dõi `release/` và `reports/`, khởi động lại dev. Không khẳng định đây là nguyên nhân khiến trình duyệt treo.

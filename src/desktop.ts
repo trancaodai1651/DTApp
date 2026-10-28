@@ -4,9 +4,16 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 
 export const isDesktop = () => isTauri();
 
-export async function openDesktopOAuth(url: string) {
+export type OAuthBrowser = 'default' | 'edge';
+
+export function supportsEdgeOAuth() {
+  return isDesktop() && /Windows/i.test(navigator.userAgent);
+}
+
+export async function openDesktopOAuth(url: string, browser: OAuthBrowser = 'default') {
   const validated = await invoke<string>('validate_oauth_url', { url });
-  await openUrl(validated);
+  if (browser === 'edge' && !supportsEdgeOAuth()) throw new Error('Microsoft Edge chỉ được hỗ trợ cho đăng nhập trên Windows.');
+  await openUrl(validated, browser === 'edge' ? 'msedge' : undefined);
 }
 
 export async function subscribeDesktopOAuth(callback: (url: string) => void): Promise<() => void> {

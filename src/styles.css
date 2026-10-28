@@ -453,6 +453,7 @@ html[data-theme=dark],html[data-theme=dark] body{background:#111a24;color:#e7f0f
 .access-card h1{margin:16px 0 9px;font-size:clamp(28px,6vw,36px);letter-spacing:-.045em;line-height:1.12}
 .access-card>p{color:#708197;font-size:15px;line-height:1.7}
 .access-google-button{width:100%;justify-content:center;gap:11px;margin-top:16px;padding:14px}
+.access-login-form{margin-top:18px}.access-login-form .field-label{display:block;margin:12px 0 6px}.access-login-form p{margin-top:9px;color:#708197;font-size:12px;line-height:1.6}
 .access-error{padding:11px 13px;border:1px solid #f0c9c9;border-radius:10px;background:#fff3f3;color:#a94343;font-size:13px;line-height:1.5}
 .access-footnote{display:flex;gap:9px;margin-top:24px;padding-top:18px;border-top:1px solid #e8eef4;color:#8392a3;font-size:12px;line-height:1.6}
 .access-footnote svg{flex:0 0 auto;margin-top:2px}

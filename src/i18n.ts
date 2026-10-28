@@ -1,6 +1,9 @@
 export type Language = 'vi' | 'en';
 
 const english: Record<string, string> = {
+  "Trình duyệt đăng nhập": "Sign-in browser",
+  "Trình duyệt mặc định": "Default browser",
+  "Nếu Chrome bị treo, chọn Microsoft Edge rồi đăng nhập lại. Không thay đổi trình duyệt mặc định của máy.": "If Chrome hangs, choose Microsoft Edge and try again. This leaves your system's default browser unchanged.",
   "DT App": "DT App",
   "DT APP": "DT APP",
   "DT Poster Studio": "DT Poster Studio",

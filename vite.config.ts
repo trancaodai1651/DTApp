@@ -5,6 +5,6 @@ export default defineConfig({
   base: './',
   plugins: [react()],
   worker: { format: 'es' },
-  server: { proxy: { '/api': 'http://127.0.0.1:8787' }, watch: { ignored: ['**/src-tauri/**', '**/.venv-*/**', '**/artifacts/**'] } },
+  server: { proxy: { '/api': 'http://127.0.0.1:8787' }, watch: { ignored: ['**/src-tauri/**', '**/.venv-*/**', '**/artifacts/**', '**/release/**', '**/reports/**'] } },
   build: { chunkSizeWarningLimit: 900 },
 });

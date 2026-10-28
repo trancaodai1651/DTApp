@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Check, CircleHelp, LoaderCircle, Moon, Plus, ShieldCheck, Sun, Trash2, UserRound, Users, X } from 'lucide-react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { addManagedUser, deleteManagedUser, readManagedUsers, updateManagedUser, type AppRole, type AppUserRecord } from './cloud';
+import { supportsEdgeOAuth, type OAuthBrowser } from './desktop';
 
 export function GoogleLoginPage({ loading, error, onGoogle, onRetry, language, appearance, onToggleLanguage, onToggleTheme, t }: {
   loading: boolean;
   error: string;
-  onGoogle: (emailHint?: string) => void;
-  onRetry: (emailHint?: string) => void;
+  onGoogle: (emailHint?: string, browser?: OAuthBrowser) => void;
+  onRetry: (emailHint?: string, browser?: OAuthBrowser) => void;
   language: 'vi' | 'en';
   appearance: 'light' | 'dark';
   onToggleLanguage: () => void;
@@ -15,21 +16,23 @@ export function GoogleLoginPage({ loading, error, onGoogle, onRetry, language, a
   t: (text: string) => string;
 }) {
   const [emailHint, setEmailHint] = useState('');
+  const [browser, setBrowser] = useState<OAuthBrowser>('default');
   return <main className="access-screen" lang={language} data-theme={appearance}><div className="access-tools"><button className="language-toggle" onClick={onToggleLanguage}>{language === 'vi' ? 'EN' : 'VI'}</button><button className="icon-button" onClick={onToggleTheme} aria-label={t(appearance === 'light' ? 'Chế độ tối' : 'Chế độ sáng')}>{appearance === 'light' ? <Moon size={17} /> : <Sun size={17} />}</button></div>
     <section className="access-card">
       <div className="access-brand"><span className="logo-mark">D<span /></span><span>DT App</span></div>
       <span className="access-kicker"><ShieldCheck size={15} /> {t('KHÔNG GIAN CÓ KIỂM SOÁT')}</span>
       <h1>{t('Đăng nhập để tiếp tục')}</h1>
       <p>{t('Dùng tài khoản Google đã được DT App cấp quyền để mở công cụ, quản lý bio và đồng bộ dữ liệu.')}</p>
-      <form onSubmit={event => { event.preventDefault(); onGoogle(emailHint.trim() || undefined); }}>
+      <form className="access-login-form" onSubmit={event => { event.preventDefault(); onGoogle(emailHint.trim() || undefined, browser); }}>
       <label className="field-label" htmlFor="google-email-hint">{t('Email Google (tùy chọn)')}</label>
       <input id="google-email-hint" type="email" autoComplete="email" maxLength={254} value={emailHint} onChange={event => setEmailHint(event.target.value)} placeholder="you@gmail.com" />
+      {supportsEdgeOAuth() && <><label className="field-label" htmlFor="google-browser">{t('Trình duyệt đăng nhập')}</label><select id="google-browser" value={browser} onChange={event => setBrowser(event.target.value === 'edge' ? 'edge' : 'default')}><option value="default">{t('Trình duyệt mặc định')}</option><option value="edge">Microsoft Edge</option></select><p>{t('Nếu Chrome bị treo, chọn Microsoft Edge rồi đăng nhập lại. Không thay đổi trình duyệt mặc định của máy.')}</p></>}
       <button type="submit" className="button primary access-google-button" disabled={loading}>
         {loading ? <LoaderCircle className="spin" size={18} /> : <GoogleMark />}
         {loading ? t('Đang chờ Google…') : t('Tiếp tục với Google')}
       </button>
       </form>
-      {loading && <><p>{t('Hoàn tất đăng nhập trong trình duyệt, sau đó mở lại DT App. Nếu trang chọn tài khoản bị kẹt, thử lại và điền email ở trên.')}</p><button className="button secondary full" onClick={() => onRetry(emailHint.trim() || undefined)}>{t('Thử đăng nhập lại')}</button></>}
+      {loading && <><p>{t('Hoàn tất đăng nhập trong trình duyệt, sau đó mở lại DT App. Nếu trang chọn tài khoản bị kẹt, thử lại và điền email ở trên.')}</p><button className="button secondary full" onClick={() => onRetry(emailHint.trim() || undefined, browser)}>{t('Thử đăng nhập lại')}</button></>}
       {error && <p className="access-error" role="alert">{error}</p>}
       <div className="access-footnote"><CircleHelp size={15} /><span>{t('Tài khoản đầu tiên có quyền quản trị là trancaodai1651@gmail.com. Quản trị viên có thể cấp quyền cho người dùng khác.')}</span></div>
     </section>

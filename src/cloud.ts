@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient, type User } from '@supabase/supabase
 import type { Poster } from './model';
 import type { SavedProject } from './storage';
 import { sanitizeSalesChannels, type BioProfile } from './sales-channels';
-import { isDesktop, openDesktopOAuth } from './desktop';
+import { isDesktop, openDesktopOAuth, type OAuthBrowser } from './desktop';
 import { googleOAuthQuery } from './auth-policy.mjs';
 
 export interface CloudConfig { url: string; anonKey: string }
@@ -47,7 +47,7 @@ export function configuredClient(): SupabaseClient | null {
   try { return configureCloud(config, false); } catch { return null; }
 }
 
-export async function signInWithGoogle(client: SupabaseClient, emailHint?: string): Promise<void> {
+export async function signInWithGoogle(client: SupabaseClient, emailHint?: string, browser: OAuthBrowser = 'default'): Promise<void> {
   const desktop = isDesktop() || Boolean(window.dtPosterSecureStore?.openOAuthURL);
   let redirectTo = 'dtapp://auth/callback';
   if (!desktop) {
@@ -64,7 +64,7 @@ export async function signInWithGoogle(client: SupabaseClient, emailHint?: strin
   const { data, error } = result;
   if (error) throw error;
   if (desktop && data.url) {
-    if (isDesktop()) await openDesktopOAuth(data.url);
+    if (isDesktop()) await openDesktopOAuth(data.url, browser);
     else await window.dtPosterSecureStore!.openOAuthURL(data.url);
   }
 }

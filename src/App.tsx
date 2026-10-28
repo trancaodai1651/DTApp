@@ -14,7 +14,7 @@ import { AccessDeniedPage, GoogleLoginPage, UsersPage } from './access';
 import { appBaseUrl, BioBuilderPage, BioLinks, BioPagesPage, channelHref, createDefaultChannels, defaultDestinations, readSharedBio as readLegacySharedBio, readBioShareId, readBioSlug, sanitizeSalesChannels, SalesChannelsPage, type BioProfile, type SalesChannel } from './sales-channels';
 import { isValidBioSlug, normalizeBioSlug } from './bio-slug.mjs';
 import DouyinStudio from './douyin/DouyinStudio';
-import { isDesktop, subscribeDesktopOAuth } from './desktop';
+import { isDesktop, subscribeDesktopOAuth, type OAuthBrowser } from './desktop';
 import { authUserKey, hasGoogleIdentity } from './auth-policy.mjs';
 import { mediaRequest, lockMediaSession } from './douyin/api';
 
@@ -476,12 +476,12 @@ export default function App() {
     } catch (error) { notify(`${t('Không tải được dữ liệu Supabase:')} ${errorMessage(error)}`, true); }
     finally { setBusy(''); }
   }
-  async function startGoogleLogin(emailHint?: string, retry = false) {
+  async function startGoogleLogin(emailHint?: string, retry = false, browser: OAuthBrowser = 'default') {
     if (!cloudClient) { setAuthError(t('Không thể kết nối Supabase. Hãy kiểm tra cấu hình triển khai.')); return; }
     if (oauthStarting.current || (oauthPending && !retry)) return;
     oauthStarting.current = true;
     setAuthError(''); setBusy(t('Đang mở đăng nhập Google…')); setOAuthPending(true);
-    try { await signInWithGoogle(cloudClient, emailHint); }
+    try { await signInWithGoogle(cloudClient, emailHint, browser); }
     catch (error) {
       setOAuthPending(false);
       const message = errorMessage(error);
@@ -565,7 +565,7 @@ export default function App() {
   };
   if (!isPublicBio) {
     if (authLoading) return <main className="access-screen"><section className="access-card access-loading"><LoaderCircle className="spin" size={28} /><p>{t('Đang xác minh tài khoản Google…')}</p></section></main>;
-    if (!hasGoogleIdentity(cloudUser)) return <GoogleLoginPage loading={!!busy || oauthPending} error={authError} onGoogle={email => { void startGoogleLogin(email); }} onRetry={email => { void startGoogleLogin(email, true); }} language={language} appearance={appearance} onToggleLanguage={() => setLanguage(value => value === 'vi' ? 'en' : 'vi')} onToggleTheme={() => setAppearance(value => value === 'light' ? 'dark' : 'light')} t={t} />;
+    if (!hasGoogleIdentity(cloudUser)) return <GoogleLoginPage loading={!!busy || oauthPending} error={authError} onGoogle={(email, browser) => { void startGoogleLogin(email, false, browser); }} onRetry={(email, browser) => { void startGoogleLogin(email, true, browser); }} language={language} appearance={appearance} onToggleLanguage={() => setLanguage(value => value === 'vi' ? 'en' : 'vi')} onToggleTheme={() => setAppearance(value => value === 'light' ? 'dark' : 'light')} t={t} />;
     if (!appAccess?.isActive) return <AccessDeniedPage email={cloudUser.email || ''} error={authError} loading={authLoading} onRetry={() => { void recheckAccess(); }} onSignOut={() => { void signOutCloud(); }} language={language} appearance={appearance} onToggleLanguage={() => setLanguage(value => value === 'vi' ? 'en' : 'vi')} onToggleTheme={() => setAppearance(value => value === 'light' ? 'dark' : 'light')} t={t} />;
   }
   return <div className={`app-shell ${isPublicBio ? 'bio-public-shell' : ''}`} data-theme={isPublicBio ? 'light' : appearance}>
