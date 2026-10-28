@@ -103,3 +103,12 @@ Video gốc có 11.054.017 byte, dài 68,6 giây. Mẫu SRT chỉ có lời tron
 - Tìm kiếm nhận tối đa một từ khóa cho mỗi ngôn ngữ tiếng Việt, English và 中文. Worker tìm lần lượt trong phiên khách, gộp kết quả theo ID và bỏ trùng; người dùng có thể nhập một hoặc nhiều trường. App gửi nguyên văn từng từ khóa, không tự dịch.
 - `npm run build`, `py_compile` cho worker và `git diff --check` đều qua trên workspace. Kiểm tra đóng gói và lấy bộ cài 0.2.5 sẽ được ghi nhận sau CI.
 - Guest search vẫn phụ thuộc kết quả Douyin công khai; CAPTCHA, giới hạn khách và nội dung yêu cầu đăng nhập có thể khiến Douyin không trả kết quả.
+
+
+## Cập nhật 0.2.6 — tìm bằng Playwright và chờ xác minh trong cùng tab
+
+- Tìm kiếm dùng Chromium có cửa sổ do Playwright điều khiển, giữ cùng guest profile và tab tìm kiếm. Khi CAPTCHA xuất hiện, tác vụ chờ tối đa 180 giây để người dùng tự xác minh rồi tự thu kết quả; hủy tác vụ dừng chờ. Hết thời gian vẫn giữ tab, thử lại cùng từ khóa không tải lại CAPTCHA đang mở.
+- Nhận diện iframe CAPTCHA đang hiển thị và tiêu đề trang xác minh; bỏ nhận diện bằng từ `verify` quá rộng. Trang báo không có kết quả được trả về như kết quả rỗng, thay vì báo sai thành CAPTCHA.
+- 24 kiểm thử Python qua, gồm giữ tab khi timeout/thử lại, hủy chờ, tự tiếp tục, gộp ba ngôn ngữ, bỏ trùng và giữ kết quả trước khi bị chặn. Build web qua.
+- Playwright thực chạy với response giả lập do dự án kiểm soát đã xác nhận chờ xác minh, bắt response và dùng lại tab. Đây không phải bằng chứng tìm được video Douyin thật.
+- Playwright chạy có cửa sổ trên Douyin thật nhận trang `验证码中间页`, iframe `rmc.bytedance.com/verifycenter/captcha/v2`, 0 video; timeout giữ tab mở. Người dùng đã hoàn tất CAPTCHA. Lượt Playwright tiếp theo dùng cùng guest profile đã vào trang tìm kiếm, nhận hộp `登录后即可搜索更多精彩视频` (cần đăng nhập để tìm thêm video), 0 video; app bổ sung nhận diện chính xác login wall này. Chưa thể xác nhận tìm kiếm trả video ở chế độ khách trong phiên này. Người dùng chọn chỉ tìm trực tiếp Douyin, không dùng chỉ mục web thay thế. Bằng chứng cục bộ: `artifacts/douyin-playwright-search-live/`, `artifacts/search-fixture-result.json`.

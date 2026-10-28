@@ -16,12 +16,20 @@ def _has_no_more(value):
     return value is False or value == 0 or value == "0"
 
 
+def search_login_required(body):
+    return any(marker in body for marker in (
+        "登录后查看更多", "登录查看更多", "请登录后查看", "登录后查看全部",
+        "登录后即可搜索", "登录后搜索更多", "登录即可搜索",
+    ))
+
+
 class GuestBrowser:
     def __init__(self, root):
         self.root = Path(root)
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(self.root / "browsers")
         self.runtime = self.context = None
         self.visible = False
+        self.search_page = None
         self.lock = asyncio.Lock()
 
     async def start(self, visible=False):
@@ -50,6 +58,33 @@ class GuestBrowser:
         if self.runtime:
             await self.runtime.stop()
         self.context = self.runtime = None
+        self.search_page = None
+        self.visible = False
+
+    async def search_challenge_visible(self, page):
+        if page.is_closed():
+            raise GuestBlocked("Cửa sổ tìm kiếm đã đóng. Bấm tìm lại để mở Douyin khách.")
+        if "验证码" in await page.title():
+            return True
+        for frame in await page.locator('iframe[src*="verifycenter/captcha"], iframe[src*="captcha"]').all():
+            if await frame.is_visible():
+                return True
+        return False
+
+    async def wait_for_search_verification(self, page, progress, cancelled, timeout=180):
+        if not await self.search_challenge_visible(page):
+            return False
+        await page.bring_to_front()
+        deadline = asyncio.get_running_loop().time() + timeout
+        while await self.search_challenge_visible(page):
+            if cancelled():
+                raise asyncio.CancelledError()
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise GuestBlocked("Douyin vẫn chờ xác minh. Tab tìm kiếm đã được giữ mở; hoàn tất CAPTCHA trong cửa sổ đó rồi bấm tìm lại.")
+            progress(f"Hoàn tất CAPTCHA trong cửa sổ Douyin đang mở · tự tiếp tục sau xác minh · còn {int(remaining)} giây")
+            await asyncio.sleep(min(1, remaining))
+        return True
 
     async def open(self, url):
         async with self.lock:
@@ -64,8 +99,12 @@ class GuestBrowser:
         if not query or len(query) > 120 or any(ord(char) < 32 for char in query):
             raise ValueError("Từ khóa tìm kiếm cần có từ 1 đến 120 ký tự.")
         async with self.lock:
-            context = await self.start()
-            page = await context.new_page()
+            # Search is interactive: keep the exact tab and guest profile alive
+            # while the person completes any verification shown by Douyin.
+            context = await self.start(True)
+            page = self.search_page
+            if page is None or page.is_closed():
+                page = self.search_page = await context.new_page()
             records, pending = {}, set()
             state = {"hasMore": None, "searchSeen": False, "blocked": False}
 
@@ -99,12 +138,18 @@ class GuestBrowser:
             page.on("response", schedule)
             try:
                 search_url = "https://www.douyin.com/search/" + quote(query, safe="") + "?type=video"
-                await page.goto(search_url, wait_until="domcontentloaded", timeout=45000)
+                same_search = page.url.split("?")[0] == search_url.split("?")[0]
+                if not (same_search and await self.search_challenge_visible(page)):
+                    await page.goto(search_url, wait_until="domcontentloaded", timeout=45000)
+                await page.bring_to_front()
                 stale, previous = 0, -1
                 for turn in range(max_scrolls):
                     if cancelled():
                         raise asyncio.CancelledError()
                     await page.wait_for_timeout(1200)
+                    if await self.wait_for_search_verification(page, progress, cancelled):
+                        state["blocked"] = False
+                        stale, previous = 0, -1
                     if pending:
                         await asyncio.gather(*list(pending), return_exceptions=True)
                     count = len(records)
@@ -153,12 +198,11 @@ class GuestBrowser:
 
                 if not records:
                     body = (await page.locator("body").inner_text())[:5000]
-                    title = (await page.title()).lower()
-                    if state["blocked"] or any(marker in (body + " " + title).lower() for marker in ("验证码", "安全验证", "verify")):
-                        raise GuestBlocked("Douyin đang yêu cầu xác minh khách. Mở Douyin khách, xử lý CAPTCHA trực tiếp nếu được hiển thị, rồi tìm lại; app không vượt xác minh hoặc đăng nhập thay bạn.")
-                    login_wall = any(marker in body for marker in (
-                        "登录后查看更多", "登录查看更多", "请登录后查看", "登录后查看全部"
-                    ))
+                    if state["blocked"] or await self.search_challenge_visible(page):
+                        raise GuestBlocked("Douyin yêu cầu xác minh nhưng chưa trả video. Tab tìm kiếm đã giữ mở; kiểm tra cửa sổ Douyin rồi tìm lại.")
+                    if any(marker in body for marker in ("暂无搜索结果", "没有找到相关", "未找到相关结果")):
+                        return {"videos":[], "complete":True, "warning":""}
+                    login_wall = search_login_required(body)
                     if login_wall and not state["searchSeen"]:
                         raise GuestBlocked("Douyin yêu cầu đăng nhập để hiện kết quả tìm kiếm này. Chế độ khách chỉ tìm được nội dung Douyin công khai.")
                     raise GuestBlocked("Douyin chưa trả kết quả tìm kiếm cho phiên khách. Thử lại sau hoặc mở Douyin khách để kiểm tra trang.")
@@ -171,7 +215,7 @@ class GuestBrowser:
                 page.remove_listener("response", schedule)
                 if pending:
                     await asyncio.gather(*list(pending), return_exceptions=True)
-                await page.close()
+                # Keep search/CAPTCHA open for retry and manual verification.
 
     async def collect(self, url, progress, cancelled, max_scrolls=600, since=None, on_videos=None):
         async with self.lock:

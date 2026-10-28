@@ -369,7 +369,7 @@ class Engine:
             if result["warning"]:
                 warnings.append(f"{language_names.get(language, language)}: {result['warning']}")
 
-        if not records:
+        if not records and warnings:
             raise GuestBlocked("; ".join(warnings) or "Douyin chưa trả kết quả tìm kiếm công khai.")
         ids = []
         for video in records.values():
