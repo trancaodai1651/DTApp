@@ -19,10 +19,10 @@ export interface MediaJob {
   output: string; resultIds?: string[]; createdAt: number;
   transcript?: string; detectedLanguage?: string; referenceAudio?: string; referenceText?: string;
 }
-export interface MediaSettings { downloadDir: string; voicePython: string; device: string; interval: number }
+export interface MediaSettings { downloadDir: string; voicePython: string; device: string; interval: number; browserVisible: boolean }
 export interface MediaSnapshot {
   channels: DouyinChannel[]; videos: DouyinVideo[]; jobs: MediaJob[]; settings: MediaSettings;
-  runtime: { browserInstalled: boolean; guestOpen: boolean; voiceConfigured: boolean; dataDir: string };
+  runtime: { browserInstalled: boolean; browserBundled?: boolean; guestOpen: boolean; voiceConfigured: boolean; dataDir: string };
 }
 
 export async function mediaRequest<T = unknown>(command: string, payload: unknown = {}): Promise<T> {

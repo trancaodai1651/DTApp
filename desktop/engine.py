@@ -16,7 +16,7 @@ import uuid
 from urllib.parse import urlparse
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from browser import GuestBrowser, GuestBlocked
-from domain import date_bounds, douyin_url, in_period, parse_script, safe_name, video_quality
+from domain import date_bounds, douyin_url, in_period, parse_script, safe_name, video_quality, video_id_from_url
 from auth import GoogleSession
 
 HIDDEN = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
@@ -93,6 +93,9 @@ class Engine:
         self.settings = self.store.get("settings", "main") or {
             "id": "main", "downloadDir": str(Path.home() / "Downloads" / "DTApp"),
             "voicePython": "", "device": "auto", "interval": 60}
+        self.settings.setdefault("browserVisible", True)
+        self.browser.preferred_visible = self.settings["browserVisible"]
+        self.browser_bootstrap_requested = False
         for job in self.store.all("jobs"):
             if job["state"] == "running":
                 job.update(state="interrupted", message="App đã đóng khi đang xử lý. Bấm Thử lại để tiếp tục.")
@@ -126,7 +129,7 @@ class Engine:
         jobs = sorted(self.store.all("jobs"), key=lambda j: j["createdAt"], reverse=True)
         return {"channels": channels, "videos": sorted(public_videos, key=lambda v: v.get("createdAt") or 0, reverse=True),
             "jobs": [{k: v for k, v in j.items() if k not in {"input", "transcript", "referenceAudio", "referenceText"}} for j in jobs[:300]], "settings": self.settings,
-            "runtime": {"browserInstalled": any((self.root / "browsers").glob("chromium-*")),
+            "runtime": {"browserInstalled": self.browser.installed(), "browserBundled": getattr(sys,"frozen",False) and self.browser.browsers_dir != self.root / "browsers",
                 "guestOpen": self.browser.visible and self.browser.context is not None,
                 "voiceConfigured": bool(self.settings["voicePython"]), "dataDir": str(self.root)}}
 
@@ -146,12 +149,16 @@ class Engine:
         if command == "heartbeat":
             return {"authenticated":self.auth.ready}
         if command == "snapshot":
+            if self.require_google and self.auth.ready and not self.browser_bootstrap_requested and not self.browser.installed():
+                self.browser_bootstrap_requested = True
+                if not any(j["kind"] == "install_browser" for j in self.store.active_jobs()):
+                    self.queue("install_browser", {})
             return self.snapshot()
         if command == "transcript_result":
             job = self.store.get("jobs", payload.get("id", ""))
             if not job or job.get("kind") != "transcribe" or job.get("state") != "done":
                 raise ValueError("Bản chép lời chưa sẵn sàng.")
-            return {key:job.get(key, "") for key in ("transcript", "detectedLanguage", "referenceAudio", "referenceText")}
+            return {key:job.get(key, "") for key in ("transcript", "detectedLanguage", "referenceAudio", "referenceText", "subtitleFile", "targetLanguage")}
         if command == "save_channel":
             return self.save_channel(payload)
         if command == "remove_channel":
@@ -173,7 +180,11 @@ class Engine:
             python = str(payload.get("voicePython", "")).strip()
             if python and not Path(python).is_file():
                 raise ValueError("Chọn đúng tập tin Python của môi trường đã cài OmniVoice.")
-            self.settings.update(downloadDir=str(directory), voicePython=python, device=device)
+            visible = payload.get("browserVisible", self.settings["browserVisible"])
+            if not isinstance(visible, bool):
+                raise ValueError("Chế độ Chromium không hợp lệ.")
+            self.settings.update(downloadDir=str(directory), voicePython=python, device=device, browserVisible=visible)
+            self.browser.preferred_visible = visible
             self.store.put("settings", self.settings)
             return True
         if command == "monitor":
@@ -228,14 +239,17 @@ class Engine:
             video = self.store.get("videos", payload.get("videoId"))
             if not video or not video.get("file") or not Path(video["file"]).is_file():
                 raise ValueError("Tải video về trước khi lồng tiếng.")
-            parse_script(payload.get("script", ""))
+            if not payload.get("fromAudio", False):
+                parse_script(payload.get("script", ""))
+            if payload.get("language", "vi") not in ("vi", "en", "zh", "ja", "ko"):
+                raise ValueError("Ngôn ngữ đầu ra không được hỗ trợ.")
             if payload.get("voiceMode", "narration") not in ("narration", "dub"):
                 raise ValueError("Chế độ âm thanh cần là thuyết minh hoặc lồng tiếng.")
             if not self.settings["voicePython"]:
                 raise ValueError("Chọn Python đã cài OmniVoice trong Cài đặt Douyin trước.")
-            if not payload.get("refAudio") or not str(payload.get("refText", "")).strip():
+            if not payload.get("fromAudio", False) and (not payload.get("refAudio") or not str(payload.get("refText", "")).strip()):
                 raise ValueError("Chép lời audio gốc để lấy đoạn tiếng và bản chép làm mẫu giọng OmniVoice.")
-            if not Path(payload["refAudio"]).is_file():
+            if not payload.get("fromAudio", False) and not Path(payload["refAudio"]).is_file():
                 raise ValueError("Tập tin giọng mẫu không tồn tại.")
             if not 0 <= float(payload.get("originalVolume", 0)) <= 1:
                 raise ValueError("Âm lượng gốc từ 0 đến 1.")
@@ -246,6 +260,8 @@ class Engine:
                 raise ValueError("Tải video về trước khi chép lời audio.")
             if not self.settings["voicePython"]:
                 raise ValueError("Chọn Python đã cài OmniVoice trong Cài đặt Douyin trước.")
+            if payload.get("targetLanguage") and payload["targetLanguage"] not in ("vi", "en", "zh", "ja", "ko"):
+                raise ValueError("Ngôn ngữ phụ đề không được hỗ trợ.")
             return self.queue("transcribe", payload)
         if command == "install_asr":
             if not self.settings["voicePython"] or not Path(self.settings["voicePython"]).is_file():
@@ -332,7 +348,8 @@ class Engine:
             channel = next((c for c in self.store.all("channels") if c["url"] == channel_url), None)
             if not channel:
                 channel = self.save_channel({"url": channel_url, "name": first["author"], "notes": "Tác giả từ video đã quét"})
-        bounds = date_bounds(payload.get("mode", "all"), payload.get("anchor"), payload.get("end"))
+        single_id = video_id_from_url(result.get("resolvedUrl", payload["url"]))
+        bounds = date_bounds("all" if single_id else payload.get("mode", "all"), payload.get("anchor"), payload.get("end"))
         matches, unknown_dates = [], 0
         for video in result["videos"]:
             old = self.store.get("videos", video["id"]) or {}
@@ -357,11 +374,12 @@ class Engine:
                     if result["complete"]:
                         channel["lastMonitorCoverage"] = scan_started
                 self.store.put("channels", channel)
-        if payload.get("autoDownload"):
-            self.enqueue_downloads(matches)
+        auto_queued = None
+        if payload.get("autoDownload") or (single_id and not payload.get("monitor")):
+            auto_queued = self.enqueue_downloads(matches)
         warning = result["warning"] + (f" Có {unknown_dates} video thiếu ngày đăng, chưa đưa vào khoảng thời gian." if unknown_dates else "")
         self.update_job(job, state="partial" if warning else "done", progress=100,
-            message=f"Tìm thấy {len(result['videos'])} video, {len(matches)} video trong lựa chọn. " + warning,
+            message=f"Tìm thấy {len(result['videos'])} video, {len(matches)} video trong lựa chọn. " + (f"Đã xếp tải {auto_queued['queued']} video chất lượng cao nhất. " if auto_queued else "") + warning,
             resultIds=matches)
 
     async def search(self, job):
@@ -407,7 +425,8 @@ class Engine:
                 text = line.decode("utf-8", "replace").strip()
                 tail.append(text)
                 tail[:] = tail[-15:]
-                self.update_job(job, message=text[-700:])
+                if text.startswith(("Đang", "Đã", "Tạo giọng", "Hoàn tất", "Downloading", "Installing", "Successfully installed")) or re.search(r"\b\d+%", text):
+                    self.update_job(job, message=text[-700:])
             return "\n".join(tail)
         reader = asyncio.create_task(read())
         try:
@@ -518,10 +537,20 @@ class Engine:
 
     async def dub(self, job):
         import imageio_ffmpeg
-        payload = job["input"]
+        payload = dict(job["input"])
         video = self.store.get("videos", payload["videoId"])
         if not video or not Path(video.get("file", "")).is_file():
             raise ValueError("Không tìm thấy video gốc trên đĩa.")
+        if payload.get("fromAudio", False):
+            prepared = self.store.get("jobs", payload.get("subtitleJobId", ""))
+            if prepared and prepared.get("kind") == "transcribe" and prepared.get("state") == "done" and prepared["input"].get("videoId") == video["id"] and prepared.get("targetLanguage") == payload.get("language", "vi"):
+                result = prepared
+                script = payload.get("script") or result["transcript"]
+            else:
+                result = await self.transcribe(job, finalize=False, target_language=payload.get("language", "vi"))
+                script = result["transcript"]
+            payload.update(script=script, refAudio=result["referenceAudio"], refText=result["referenceText"])
+            parse_script(script)
         work = self.root / "voice-jobs" / job["id"]
         work.mkdir(parents=True, exist_ok=True)
         mode_suffix = "narration" if payload.get("voiceMode", "narration") == "narration" else "dub"
@@ -540,8 +569,17 @@ class Engine:
         self.update_job(job, state="done", progress=100,
             message=("Đã thuyết minh và ghép video" if mode_suffix == "narration" else "Đã lồng tiếng và ghép video"), output=str(output))
 
-    async def transcribe(self, job):
+    async def ensure_speech_runtime(self, job):
+        self.update_job(job, message="Đang chuẩn bị nhận dạng audio và dịch phụ đề…")
+        check = await asyncio.to_thread(subprocess.run,
+            [self.settings["voicePython"], "-c", "import faster_whisper; from transformers import AutoModelForCausalLM, AutoTokenizer"],
+            capture_output=True, timeout=60, **HIDDEN)
+        if check.returncode:
+            await self.install_asr(job, finalize=False)
+
+    async def transcribe(self, job, finalize=True, target_language=None):
         import imageio_ffmpeg
+        await self.ensure_speech_runtime(job)
         video = self.store.get("videos", job["input"]["videoId"])
         if not video or not Path(video.get("file", "")).is_file():
             raise ValueError("Không tìm thấy video gốc trên thiết bị.")
@@ -559,20 +597,34 @@ class Engine:
         transcript = str(result.get("transcript", ""))
         if not transcript or len(transcript) > 50000:
             raise RuntimeError("Bản chép lời rỗng hoặc vượt giới hạn 50.000 ký tự.")
-        self.update_job(job, state="done", progress=100,
-            message=f"Đã chép lời audio · ngôn ngữ {result.get('detectedLanguage') or 'chưa xác định'}.",
-            transcript=transcript, detectedLanguage=result.get("detectedLanguage", ""),
-            referenceAudio=result.get("referenceAudio", ""), referenceText=result.get("referenceText", ""),
-            output="")
+        target = target_language or job["input"].get("targetLanguage") or result.get("detectedLanguage")
+        source = result.get("detectedLanguage")
+        original_srt = work / "original.srt"
+        original_srt.write_text(transcript, encoding="utf-8")
+        if target != source:
+            translation_request = work / "translate-request.json"
+            translation_result = work / "translated.json"
+            translation_request.write_text(json.dumps({"sourceLanguage":source, "targetLanguage":target,
+                "segments":parse_script(transcript), "contextTitle":video.get("title", ""), "modelDir":str(self.root / "translation-models"),
+                "device":self.settings["device"], "result":str(translation_result)}, ensure_ascii=False), encoding="utf-8")
+            await self.run_process([self.settings["voicePython"], Path(__file__).with_name("translate_runner.py"), translation_request], job)
+            transcript = json.loads(translation_result.read_text(encoding="utf-8"))["transcript"]
+        parse_script(transcript)
+        subtitle = Path(video["file"]).with_name(Path(video["file"]).stem + f"_{target}_{job['id'][:8]}.srt")
+        subtitle.write_text(transcript, encoding="utf-8")
+        result.update(transcript=transcript, targetLanguage=target, subtitleFile=str(subtitle))
+        self.update_job(job, **({"state":"done", "progress":100} if finalize else {}),
+            message=f"Đã tạo phụ đề từ audio {source} → {target}.",
+            **{key:result.get(key, "") for key in ("transcript", "detectedLanguage", "referenceAudio", "referenceText", "subtitleFile", "targetLanguage")},
+            output=str(subtitle) if finalize else "")
+        return result
 
-    async def install_asr(self, job):
-        python = job["input"]["python"]
-        # faster-whisper 1.2.1 still passes metadata_errors to av.open;
-        # PyAV 19 removed that argument, so keep the compatible major version.
+    async def install_asr(self, job, finalize=True):
+        python = job["input"].get("python") or self.settings["voicePython"]
         await self.run_process([python, "-m", "pip", "install", "--disable-pip-version-check", "faster-whisper==1.2.1", "av<19"], job)
-        await self.run_process([python, "-c", "from faster_whisper import WhisperModel; print('Whisper ready')"], job)
-        self.update_job(job, state="done", progress=100,
-            message="Đã cài nhận dạng Whisper. Model small tải riêng ở lần chép lời đầu tiên.")
+        await self.run_process([python, "-c", "from faster_whisper import WhisperModel; from transformers import AutoModelForCausalLM; print('Speech and translation ready')"], job)
+        self.update_job(job, **({"state":"done", "progress":100} if finalize else {}),
+            message="Đã cài Whisper và bộ dịch phụ đề. Model tải ở lần sử dụng đầu tiên.")
 
     async def install_voice(self, job):
         target = self.root / "omnivoice-venv"
@@ -622,7 +674,11 @@ class Engine:
                 elif job["kind"] == "install_browser":
                     from playwright._impl._driver import compute_driver_executable
                     node, cli = compute_driver_executable()
-                    await self.run_process([node, cli, "install", "chromium"], job)
+                    async with self.browser.lock:
+                        await self.browser.close()
+                        self.browser.browsers_dir = self.root / "browsers"
+                        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(self.browser.browsers_dir)
+                        await self.run_process([node, cli, "install", "--no-shell", "chromium"], job)
                 if job["state"] == "running":
                     self.update_job(job, state="done", progress=100, message="Hoàn tất")
             except asyncio.CancelledError:
@@ -724,8 +780,23 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--require-google", action="store_true", default=True)
+    parser.add_argument("--check-browser", action="store_true")
     options = parser.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stdin.reconfigure(encoding="utf-8")
-    asyncio.run(Engine(options.data_dir, require_google=options.require_google).serve())
+    if options.check_browser:
+        async def check_browser():
+            browser = GuestBrowser(options.data_dir)
+            try:
+                context = await browser.start(False)
+                page = await context.new_page()
+                await page.goto("data:text/html,<title>DTApp Chromium</title>")
+                assert await page.title() == "DTApp Chromium"
+                print(json.dumps({"chromium":True, "version":context.browser.version,
+                    "bundled":browser.browsers_dir == Path(sys.executable).resolve().parent / "browsers"}))
+            finally:
+                await browser.close()
+        asyncio.run(check_browser())
+    else:
+        asyncio.run(Engine(options.data_dir, require_google=options.require_google).serve())

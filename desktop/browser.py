@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 from urllib.parse import quote, unquote, urlparse
 from domain import aweme_records, douyin_url, video_id_from_url, merge_video_records
 
@@ -26,7 +27,10 @@ def search_login_required(body):
 class GuestBrowser:
     def __init__(self, root):
         self.root = Path(root)
-        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(self.root / "browsers")
+        bundled = Path(sys.executable).resolve().parent / "browsers" if getattr(sys, "frozen", False) else None
+        self.browsers_dir = bundled if bundled and bundled.is_dir() else self.root / "browsers"
+        self.preferred_visible = True
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(self.browsers_dir)
         self.runtime = self.context = None
         self.visible = False
         self.search_page = None
@@ -34,18 +38,28 @@ class GuestBrowser:
         self.collect_source = None
         self.lock = asyncio.Lock()
 
-    async def start(self, visible=False):
-        if self.context and (not visible or self.visible):
+    def installed(self):
+        return any(self.browsers_dir.glob("chromium-*"))
+
+    async def start(self, visible=None):
+        if visible is None:
+            visible = self.visible if self.context else False
+        if self.context and visible == self.visible:
             return self.context
+        # Session cookies otherwise disappear when switching headed/headless.
+        cookies = await self.context.cookies() if self.context else []
         await self.close()
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(self.browsers_dir)
         from playwright.async_api import async_playwright
         self.runtime = await async_playwright().start()
         try:
             self.context = await self.runtime.chromium.launch_persistent_context(
-                str(self.root / "guest-profile"), headless=not visible,
+                str(self.root / "guest-profile"), headless=not visible, channel="chromium",
                 viewport={"width": 1280, "height": 900}, locale="zh-CN",
                 accept_downloads=False)
             self.visible = visible
+            if cookies:
+                await self.context.add_cookies(cookies)
             return self.context
         except Exception as error:
             await self.close()
@@ -78,6 +92,8 @@ class GuestBrowser:
     async def wait_for_verification(self, page, progress, cancelled, timeout=180, purpose="tìm kiếm"):
         if not await self.search_challenge_visible(page):
             return False
+        if not self.visible:
+            raise GuestBlocked("Douyin yêu cầu xác minh khi Chromium đang chạy ngầm. Chọn Hiển thị cửa sổ trong Cài đặt hoặc mở cửa sổ khách để xác minh rồi thử lại.")
         await page.bring_to_front()
         deadline = asyncio.get_running_loop().time() + timeout
         while await self.search_challenge_visible(page):
@@ -105,7 +121,7 @@ class GuestBrowser:
         async with self.lock:
             # Search is interactive: keep the exact tab and guest profile alive
             # while the person completes any verification shown by Douyin.
-            context = await self.start(True)
+            context = await self.start(self.preferred_visible)
             page = self.search_page
             if page is None or page.is_closed():
                 page = self.search_page = await context.new_page()
@@ -145,7 +161,8 @@ class GuestBrowser:
                 same_search = page.url.split("?")[0] == search_url.split("?")[0]
                 if not (same_search and await self.search_challenge_visible(page)):
                     await page.goto(search_url, wait_until="domcontentloaded", timeout=45000)
-                await page.bring_to_front()
+                if self.visible:
+                    await page.bring_to_front()
                 stale, previous = 0, -1
                 for turn in range(max_scrolls):
                     if cancelled():
@@ -223,7 +240,7 @@ class GuestBrowser:
 
     async def collect(self, url, progress, cancelled, max_scrolls=600, since=None, on_videos=None, interactive=False):
         async with self.lock:
-            context = await self.start(interactive)
+            context = await self.start(interactive and self.preferred_visible)
             page = self.collect_page if interactive else None
             reuse = page is not None and not page.is_closed() and self.collect_source == douyin_url(url)
             if page is None or page.is_closed():
@@ -271,7 +288,8 @@ class GuestBrowser:
                 if not (reuse and await self.search_challenge_visible(page)):
                     await page.goto(douyin_url(url), wait_until="domcontentloaded", timeout=45000)
                 if interactive:
-                    await page.bring_to_front()
+                    if self.visible:
+                        await page.bring_to_front()
                     await self.wait_for_verification(page, progress, cancelled, purpose="quét")
                 elif await self.search_challenge_visible(page):
                     raise GuestBlocked("Douyin cần xác minh khách. Mở lượt quét thủ công để xử lý trong cửa sổ Douyin.")

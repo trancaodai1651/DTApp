@@ -26,3 +26,8 @@ DT Poster Studio source is private, with no distribution license granted by this
 U²-Net: Xuebin Qin, Zichen Zhang, Chenyang Huang, Masood Dehghan, Osmar R. Zaiane and Martin Jagersand, “U²-Net: Going Deeper with Nested U-Structure for Salient Object Detection,” Pattern Recognition 106 (2020). Model `u2net.onnx` comes from the rembg v0.0.0 release. Its upstream MD5 `60024c5c889badc19c04ad937298a77b` is checked at installation. This checksum establishes matching content with the upstream release; it is not an independent security audit.
 
 Full dependency licenses remain in installed package directories. Tauri worker resources retain Python, Playwright, Node and imageio package license files. Chromium is installed separately with its own notices. OmniVoice/PyTorch are installed on demand. FFmpeg binary licensing and corresponding source obligations must be reviewed for redistribution; include the exact binary version/build source for each release. Retain this notice and the model/font license files under `licenses/` with distributions containing their assets. The product bottle illustration in `public/sample-product.svg` was created for this project; it is fictional demo branding.
+
+
+### Chromium and local subtitle translation (0.2.8)
+- Chromium installed by Playwright 1.56.0 is included per native architecture in the desktop resources. Chromium and its included dependencies retain the notices distributed in the browser bundle. https://playwright.dev/python/docs/browsers
+- Subtitle translation downloads `Qwen/Qwen3-1.7B` on first use (Apache-2.0 model license); weights are cached locally, not included in the application installer. https://huggingface.co/Qwen/Qwen3-1.7B

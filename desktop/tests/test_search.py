@@ -22,6 +22,7 @@ class SearchBrowserTests(unittest.IsolatedAsyncioTestCase):
         self.env.start()
         self.temp = tempfile.TemporaryDirectory()
         self.browser = GuestBrowser(self.temp.name)
+        self.browser.visible = True
         self.page = Mock()
         self.page.is_closed.return_value = False
         self.page.title = AsyncMock(return_value="验证码中间页")

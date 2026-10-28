@@ -144,6 +144,7 @@ async fn media_request(
         "download",
         "dub",
         "transcribe",
+        "transcript_result",
         "install_asr",
         "cancel",
         "retry",

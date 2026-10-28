@@ -2,6 +2,7 @@
 import argparse
 from pathlib import Path
 import platform
+import os
 import subprocess
 import sys
 
@@ -20,4 +21,11 @@ subprocess.run([python, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir
     "--specpath", str(root / "artifacts/media-pyinstaller"),
     "--paths", str(root / "desktop"), "--collect-all", "playwright", "--collect-all", "imageio_ffmpeg",
     "--add-data", str(root / "desktop/voice_runner.py") + ":.",
-    "--add-data", str(root / "desktop/transcribe_runner.py") + ":.", str(root / "desktop/engine.py")], check=True)
+    "--add-data", str(root / "desktop/transcribe_runner.py") + ":.",
+    "--add-data", str(root / "desktop/translate_runner.py") + ":.", str(root / "desktop/engine.py")], check=True)
+
+# Include the matching full Chromium in every native installer; one binary serves
+# both visible mode and Chromium's new headless mode.
+browsers = root / "src-tauri/worker-runtime" / native / "dt-media-engine/browsers"
+subprocess.run([python, "-m", "playwright", "install", "--no-shell", "chromium"],
+    env={**os.environ, "PLAYWRIGHT_BROWSERS_PATH":str(browsers)}, check=True)

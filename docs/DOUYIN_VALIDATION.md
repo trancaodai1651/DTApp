@@ -123,3 +123,15 @@ Video gốc có 11.054.017 byte, dài 68,6 giây. Mẫu SRT chỉ có lời tron
 - Đây là bản cao nhất Douyin công khai trong metadata của phiên kiểm tra; không khẳng định là file master tác giả đã tải lên. Link quét lỗi trong ảnh mới chưa được cung cấp, nên chưa xác nhận riêng trường hợp đó hoặc tải đủ kênh bị giới hạn khách.
 
 - 33 kiểm thử Python và build web production qua; có kiểm tra không tải URL cache thấp, không tự hạ khi CDN lỗi, từ chối tệp có độ phân giải thấp hơn metadata, giữ tệp cũ nếu tải lại thất bại và giữ tab xác minh khi quét thủ công.
+
+
+## Cập nhật 0.2.8 — audio → phụ đề Việt → giọng, Chromium đi kèm
+
+- Tạo giọng mặc định dùng audio video đã tải: Whisper medium nhận dạng, Qwen3-1.7B dịch theo ngữ cảnh lân cận từng phụ đề sang tiếng Việt và giữ mốc thời gian, OmniVoice dùng audio mẫu/bản chép nguyên ngữ trích cùng video. SRT lưu cạnh video; có thể tạo/xem/chỉnh trước hoặc bấm tạo giọng để chạy toàn bộ. Model tải lần đầu; không cần khóa API dịch.
+- Bộ cài đóng gói full Chromium đúng phiên bản Playwright theo từng kiến trúc. Dùng chung binary cho chế độ hiển thị và new headless; không cần cài browser riêng sau cài app. CI thực thi Chromium từ worker đóng gói và từ bên trong macOS app. Dev/legacy chưa có browser tự xếp cài ở snapshot đầu sau Google.
+- Lựa chọn hiển thị/chạy ngầm lưu trong Cài đặt. Đổi chế độ giữ guest profile; chạy ngầm gặp CAPTCHA báo cần mở cửa sổ, không chờ người dùng tương tác với cửa sổ ẩn.
+- Quét link video trực tiếp hoặc link ngắn đã giải về video tự xếp tải chất lượng cao nhất. Quét kênh chỉ tự tải khi bật tùy chọn tương ứng.
+- Bổ sung `transcript_result` vào allowlist Rust để giao diện đọc được phụ đề hoàn tất. Kiểm thử tự động kiểm tra chuỗi audio→dịch→giọng, tái sử dụng phụ đề đúng video/ngôn ngữ, giữ mốc SRT, auto-download video lẻ, bootstrap Chromium và lưu chế độ hiển thị.
+- Playwright đã kiểm tra form mặc định tiếng Việt và gửi tác vụ audio khi ô SRT trống; lưu được chế độ chạy ngầm. Bằng chứng cục bộ `artifacts/voice-editor-028.png`, `artifacts/browser-mode-028.png` và `artifacts/auto-voice-028/`.
+
+- 42 kiểm thử Python qua. Gói worker Windows đã thực chạy Chromium đi kèm ở chế độ headless (141.0.7390.37), vẫn từ chối yêu cầu app chưa có Google. Playwright đổi headless→hiển thị→headless và xác nhận cookie phiên được giữ.

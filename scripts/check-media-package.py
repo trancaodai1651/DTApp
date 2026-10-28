@@ -16,6 +16,11 @@ architecture = "aarch64" if platform.machine().lower() in ("aarch64", "arm64") e
 name = "dt-media-engine.exe" if platform.system() == "Windows" else "dt-media-engine"
 binary = Path(args.binary).resolve() if args.binary else root / "src-tauri/worker-runtime" / architecture / "dt-media-engine" / name
 with tempfile.TemporaryDirectory(prefix="dtapp-package-check-") as directory:
+    browser_check = subprocess.run([str(binary), "--data-dir", directory, "--check-browser"], capture_output=True, encoding="utf-8", timeout=60)
+    assert browser_check.returncode == 0, browser_check.stderr[-2000:]
+    browser_result = json.loads(browser_check.stdout)
+    assert browser_result["chromium"] and browser_result["bundled"], browser_result
+    print(json.dumps(browser_result))
     requests = [{"id":1,"command":"snapshot"},
         {"id":2,"command":"save_channel","payload":{"url":"https://www.douyin.com/user/test","name":"unauthorized"}},
         {"id":3,"command":"lock_session"}, {"id":4,"command":"shutdown"}]

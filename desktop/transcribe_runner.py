@@ -1,5 +1,7 @@
 """Transcribe a downloaded Douyin video into an editable, time-aligned SRT."""
 import json
+import wave
+from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
@@ -23,6 +25,11 @@ def srt_time(seconds):
     return f"{hours:02}:{minutes:02}:{seconds:02},{millis:03}"
 
 
+def bounded_segments(chunks, duration):
+    return [replace(segment, start=max(0,float(segment.start)), end=min(duration,float(segment.end)))
+        for segment in chunks if segment.start < duration and segment.end > 0 and segment.end > segment.start]
+
+
 def main(request):
     try:
         from faster_whisper import WhisperModel
@@ -39,12 +46,15 @@ def main(request):
 
     model_dir = Path(request["modelDir"])
     model_dir.mkdir(parents=True, exist_ok=True)
-    print("Đang tải/nạp Whisper small lần đầu có thể mất vài phút…", flush=True)
-    model = WhisperModel("small", device="cpu", compute_type="int8",
+    print("Đang tải/nạp Whisper medium lần đầu có thể mất vài phút…", flush=True)
+    model = WhisperModel("medium", device="cpu", compute_type="int8",
         download_root=str(model_dir))
     chunks, info = model.transcribe(str(audio), beam_size=5, vad_filter=True,
         condition_on_previous_text=False)
-    segments = list(chunks)
+    with wave.open(str(audio), "rb") as stream:
+        duration = stream.getnframes() / stream.getframerate()
+    # ASR can extend its final timestamp a little beyond the actual recording.
+    segments = bounded_segments(chunks, duration)
     if not segments:
         raise RuntimeError("Không nhận ra lời nói trong audio video.")
 
