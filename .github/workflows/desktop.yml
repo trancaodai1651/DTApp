@@ -31,6 +31,7 @@ jobs:
       - if: github.ref_type == 'tag' || inputs.run_tests
         run: python -m unittest discover -s desktop/tests -v
       - run: python scripts/build-media.py --arch ${{ matrix.arch }}
+      - run: python scripts/build-speech-runtime.py --arch ${{ matrix.arch }}
       - run: python scripts/check-media-package.py
       - shell: bash
         run: tar -cf media-${{ matrix.platform }}-${{ matrix.arch }}.tar -C src-tauri/worker-runtime ${{ matrix.arch }}
@@ -64,10 +65,10 @@ jobs:
           pattern: media-${{ matrix.platform }}-*
           merge-multiple: true
           path: artifacts/worker-downloads
-      - shell: bash
-        run: |
-          mkdir -p src-tauri/worker-runtime
-          for archive in artifacts/worker-downloads/*.tar; do tar -xf "$archive" -C src-tauri/worker-runtime; done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/unpack-workers.py
       - run: npm ci
       - run: npm ci --prefix server
       - if: github.ref_type == 'tag' || inputs.run_tests

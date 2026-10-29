@@ -137,3 +137,12 @@ Video gốc có 11.054.017 byte, dài 68,6 giây. Mẫu SRT chỉ có lời tron
 - 43 kiểm thử Python qua. Gói worker Windows đã thực chạy Chromium đi kèm ở chế độ headless (141.0.7390.37), vẫn từ chối yêu cầu app chưa có Google. Playwright đổi headless→hiển thị→headless và xác nhận cookie phiên được giữ.
 
 - Bộ dịch dùng Qwen3-4B-Instruct-2507; CUDA dùng NF4 qua bitsandbytes 0.48.2 để giảm VRAM, MPS/CPU dùng PyTorch. Kiểm tra ngôn ngữ đầu ra để không dùng nguyên câu Trung/Pinyin làm giọng Việt; ASR chặn mốc cuối tại độ dài audio thực để không lỗi SRT vượt video. Tên riêng/thuật ngữ trong bản dịch máy vẫn cần xem/sửa ở bước phụ đề.
+
+## Python va OmniVoice tich hop (0.2.9)
+
+- Installer includes relocatable CPython 3.12.16 plus OmniVoice, Whisper and translation libraries. Frozen workers ignore legacy external voicePython paths and resolve their sibling speech-runtime. No system Python or Python picker is required.
+- Windows uses bundled CPU inference immediately. Auto optionally provisions a private CUDA 12.8 stack on compatible NVIDIA drivers; automatic setup failure falls back to CPU. Explicit CUDA reports setup errors. Python installations outside DT App are never modified. Models download on first use.
+- Apple Silicon uses bundled PyTorch/MPS; Intel Mac receives private Python but local speech inference is explicitly unavailable. Intel downloading remains supported. Native and packaged checks test imports offline with system Python removed from PATH; actual MPS inference still requires a target Mac test.
+- Audio pipeline remains source audio -> timestamped transcript -> Vietnamese subtitle -> voice and stream-copy video. Review SRT where recognition/translation changes meaning.
+
+- Local validation: 51 Python unit tests and 12 Node tests passed; TypeScript/production build passed. Playwright verified no Python file picker, built-in status, device-only setup payload, default Vietnamese audio workflow and headless Chromium setting. Frozen Windows worker launched bundled Chromium and imported private CPython/Torch/OmniVoice offline with system Python excluded from PATH; Google authorization rejection checks still pass.

@@ -9,11 +9,11 @@ DT Poster Studio source is private, with no distribution license granted by this
 | Tauri v2 and plugins | MIT OR Apache-2.0 | https://github.com/tauri-apps/tauri |
 | Python | PSF-2.0 | https://www.python.org/ |
 | Playwright and driver | Apache-2.0; bundled Node retains its notices | https://github.com/microsoft/playwright-python |
-| Chromium (downloaded separately) | BSD and third-party notices | https://www.chromium.org/ |
+| Chromium (bundled browser) | BSD and third-party notices | https://www.chromium.org/ |
 | PyInstaller | GPL-2.0 with bootloader distribution exception | https://pyinstaller.org/ |
 | imageio-ffmpeg | BSD-2-Clause; bundled FFmpeg has separate terms | https://github.com/imageio/imageio-ffmpeg |
 | FFmpeg (imageio binary) | GPL/LGPL and codec notices as built; retain source availability | https://ffmpeg.org/legal.html |
-| OmniVoice (optional runtime) | Apache-2.0; model and dependencies retain their own terms | https://github.com/k2-fsa/OmniVoice |
+| OmniVoice (bundled private runtime) | Apache-2.0; model and dependencies retain their own terms | https://github.com/k2-fsa/OmniVoice |
 | Express | MIT | https://github.com/expressjs/express |
 | ONNX Runtime | MIT | https://github.com/microsoft/onnxruntime |
 | sharp | Apache-2.0; bundled libvips and codecs retain their licenses | https://github.com/lovell/sharp |
@@ -25,7 +25,7 @@ DT Poster Studio source is private, with no distribution license granted by this
 
 U²-Net: Xuebin Qin, Zichen Zhang, Chenyang Huang, Masood Dehghan, Osmar R. Zaiane and Martin Jagersand, “U²-Net: Going Deeper with Nested U-Structure for Salient Object Detection,” Pattern Recognition 106 (2020). Model `u2net.onnx` comes from the rembg v0.0.0 release. Its upstream MD5 `60024c5c889badc19c04ad937298a77b` is checked at installation. This checksum establishes matching content with the upstream release; it is not an independent security audit.
 
-Full dependency licenses remain in installed package directories. Tauri worker resources retain Python, Playwright, Node and imageio package license files. Chromium is installed separately with its own notices. OmniVoice/PyTorch are installed on demand. FFmpeg binary licensing and corresponding source obligations must be reviewed for redistribution; include the exact binary version/build source for each release. Retain this notice and the model/font license files under `licenses/` with distributions containing their assets. The product bottle illustration in `public/sample-product.svg` was created for this project; it is fictional demo branding.
+Full dependency licenses remain in installed package directories. Tauri worker resources retain Python, Playwright, Node and imageio package license files. Chromium is bundled with its own notices. Private CPython, OmniVoice and CPU PyTorch (Windows) / PyTorch MPS (macOS Apple Silicon) are bundled; model weights and optional NVIDIA acceleration are downloaded on first use. FFmpeg binary licensing and corresponding source obligations must be reviewed for redistribution; include the exact binary version/build source for each release. Retain this notice and the model/font license files under `licenses/` with distributions containing their assets. The product bottle illustration in `public/sample-product.svg` was created for this project; it is fictional demo branding.
 
 
 ### Chromium and local subtitle translation (0.2.8)
@@ -33,3 +33,9 @@ Full dependency licenses remain in installed package directories. Tauri worker r
 - Subtitle translation downloads `Qwen/Qwen3-4B-Instruct-2507` on first use (Apache-2.0 model license); weights are cached locally, not included in the application installer. https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507
 
 - bitsandbytes 0.48.2 (MIT) is installed in the optional speech environment on CUDA hosts for NF4 translation inference; it is not bundled into the desktop worker.
+
+### Private speech runtime (0.2.9)
+- CPython 3.12.16 from python-build-standalone release 20261026, selected archive SHA256 pinned in desktop/python-runtime.json. Python PSF license and native dependency licenses are retained in the distribution. https://github.com/astral-sh/python-build-standalone
+- PyTorch / torchaudio 2.8.0 (BSD-style), Transformers 5.21.0 (Apache-2.0), faster-whisper 1.2.1 (MIT), OmniVoice commit 08be0b4ccbac3e13e374e86fbfead4b4cac343e2 (Apache-2.0) ship in a relocatable private interpreter. Dependency notices remain in their dist-info/license directories. Static build libraries are omitted; runtime DLLs are retained.
+- Windows includes Microsoft Visual C++ runtime redistributable DLLs app-locally; applicable license: https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/
+- macOS Intel includes private Python but its speech stack is unavailable with this PyTorch release. The app reports that limitation; download and guest-browser tools remain available.

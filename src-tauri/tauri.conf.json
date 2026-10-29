@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DT App",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "identifier": "com.dtstudio.poster",
   "build": {
     "beforeDevCommand": "npm run dev -- --port 1420 --strictPort",

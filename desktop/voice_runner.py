@@ -1,4 +1,4 @@
-"""Runs in an optional OmniVoice environment, outside the lightweight app worker."""
+"""Runs in the application's private OmniVoice environment, outside its worker."""
 import json
 import os
 from pathlib import Path

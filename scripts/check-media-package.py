@@ -21,6 +21,11 @@ with tempfile.TemporaryDirectory(prefix="dtapp-package-check-") as directory:
     browser_result = json.loads(browser_check.stdout)
     assert browser_result["chromium"] and browser_result["bundled"], browser_result
     print(json.dumps(browser_result))
+    speech_check = subprocess.run([str(binary), "--data-dir", directory, "--check-speech"], capture_output=True, encoding="utf-8", timeout=200)
+    assert speech_check.returncode == 0, speech_check.stderr[-3000:]
+    speech_result = json.loads(speech_check.stdout)
+    assert speech_result["integrated"] and (not speech_result["supported"] or speech_result.get("speech")), speech_result
+    print(json.dumps(speech_result))
     requests = [{"id":1,"command":"snapshot"},
         {"id":2,"command":"save_channel","payload":{"url":"https://www.douyin.com/user/test","name":"unauthorized"}},
         {"id":3,"command":"lock_session"}, {"id":4,"command":"shutdown"}]

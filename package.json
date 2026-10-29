@@ -1,6 +1,6 @@
 {
   "name": "dt-poster-studio",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "private": true,
   "description": "DT App — Không gian sáng tạo và thiết kế poster trên web và desktop",
   "author": "DT Studio",
@@ -19,8 +19,8 @@
     "test": "node --test tests/*.test.mjs",
     "tauri": "tauri",
     "desktop:setup": "python scripts/setup-media.py",
-    "desktop:worker": "python scripts/build-media.py",
-    "voice:setup": "python scripts/setup-omnivoice.py",
+    "desktop:worker": "python scripts/build-media.py && python scripts/build-speech-runtime.py",
+    "voice:setup": "python scripts/build-speech-runtime.py",
     "test:media": "python -m unittest discover -s desktop/tests -v"
   },
   "dependencies": {

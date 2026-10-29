@@ -18,6 +18,7 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler
 from browser import GuestBrowser, GuestBlocked
 from domain import date_bounds, douyin_url, in_period, parse_script, safe_name, video_quality, video_id_from_url
 from auth import GoogleSession
+from speech_runtime import SpeechRuntime, interpreter, MANIFEST
 
 HIDDEN = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
@@ -93,6 +94,10 @@ class Engine:
         self.settings = self.store.get("settings", "main") or {
             "id": "main", "downloadDir": str(Path.home() / "Downloads" / "DTApp"),
             "voicePython": "", "device": "auto", "interval": 60}
+        self.speech = SpeechRuntime(self.root)
+        self.speech_checked = set()
+        selected = self.speech.selected(self.settings["device"], self.settings["voicePython"])
+        self.settings["voicePython"] = str(selected) if selected else ""
         self.settings.setdefault("browserVisible", True)
         self.browser.preferred_visible = self.settings["browserVisible"]
         self.browser_bootstrap_requested = False
@@ -131,7 +136,8 @@ class Engine:
             "jobs": [{k: v for k, v in j.items() if k not in {"input", "transcript", "referenceAudio", "referenceText"}} for j in jobs[:300]], "settings": self.settings,
             "runtime": {"browserInstalled": self.browser.installed(), "browserBundled": getattr(sys,"frozen",False) and self.browser.browsers_dir != self.root / "browsers",
                 "guestOpen": self.browser.visible and self.browser.context is not None,
-                "voiceConfigured": bool(self.settings["voicePython"]), "dataDir": str(self.root)}}
+                "voiceConfigured": self.speech.status(self.settings["device"], self.settings["voicePython"])["ready"],
+                "speech":self.speech.status(self.settings["device"], self.settings["voicePython"]), "dataDir": str(self.root)}}
 
     def save_channel(self, value):
         url = douyin_url(value.get("url", ""))
@@ -177,9 +183,8 @@ class Engine:
             device = payload.get("device", "auto")
             if device not in ("auto", "cpu", "cuda", "mps"):
                 raise ValueError("Thiết bị xử lý không hợp lệ.")
-            python = str(payload.get("voicePython", "")).strip()
-            if python and not Path(python).is_file():
-                raise ValueError("Chọn đúng tập tin Python của môi trường đã cài OmniVoice.")
+            selected = self.speech.selected(device, self.settings["voicePython"])
+            python = str(selected) if selected else ""
             visible = payload.get("browserVisible", self.settings["browserVisible"])
             if not isinstance(visible, bool):
                 raise ValueError("Chế độ Chromium không hợp lệ.")
@@ -245,8 +250,9 @@ class Engine:
                 raise ValueError("Ngôn ngữ đầu ra không được hỗ trợ.")
             if payload.get("voiceMode", "narration") not in ("narration", "dub"):
                 raise ValueError("Chế độ âm thanh cần là thuyết minh hoặc lồng tiếng.")
-            if not self.settings["voicePython"]:
-                raise ValueError("Chọn Python đã cài OmniVoice trong Cài đặt Douyin trước.")
+            status = self.speech.status(self.settings["device"], self.settings["voicePython"])
+            if not status["supported"]:
+                raise ValueError(status["message"])
             if not payload.get("fromAudio", False) and (not payload.get("refAudio") or not str(payload.get("refText", "")).strip()):
                 raise ValueError("Chép lời audio gốc để lấy đoạn tiếng và bản chép làm mẫu giọng OmniVoice.")
             if not payload.get("fromAudio", False) and not Path(payload["refAudio"]).is_file():
@@ -258,15 +264,14 @@ class Engine:
             video = self.store.get("videos", payload.get("videoId"))
             if not video or not video.get("file") or not Path(video["file"]).is_file():
                 raise ValueError("Tải video về trước khi chép lời audio.")
-            if not self.settings["voicePython"]:
-                raise ValueError("Chọn Python đã cài OmniVoice trong Cài đặt Douyin trước.")
+            status = self.speech.status(self.settings["device"], self.settings["voicePython"])
+            if not status["supported"]:
+                raise ValueError(status["message"])
             if payload.get("targetLanguage") and payload["targetLanguage"] not in ("vi", "en", "zh", "ja", "ko"):
                 raise ValueError("Ngôn ngữ phụ đề không được hỗ trợ.")
             return self.queue("transcribe", payload)
         if command == "install_asr":
-            if not self.settings["voicePython"] or not Path(self.settings["voicePython"]).is_file():
-                raise ValueError("Cài hoặc chọn Python đã cài OmniVoice trước.")
-            return self.queue("install_asr", {"python":self.settings["voicePython"]})
+            return self.queue("install_asr", {})
         if command == "cancel":
             job = self.store.get("jobs", payload["id"])
             if job and job["state"] in ("queued", "running"):
@@ -285,17 +290,10 @@ class Engine:
         if command == "install_browser":
             return self.queue("install_browser", {})
         if command == "install_voice":
-            python = Path(str(payload.get("python", "")))
-            if not python.is_absolute() or not python.is_file():
-                raise ValueError("Chọn tập tin Python 3.10+ để tạo môi trường OmniVoice riêng.")
-            device = payload.get("device", "cpu")
-            if device not in ("cpu", "cuda", "mps"):
-                raise ValueError("Chọn CPU, CUDA hoặc MPS để cài PyTorch.")
-            if sys.platform == "darwin":
-                import platform
-                if platform.machine() == "x86_64":
-                    raise ValueError("OmniVoice cần PyTorch mới, chưa có wheel chính thức cho macOS Intel. Có thể chọn Python tự biên dịch tương thích ở Cài đặt; tải video vẫn hoạt động.")
-            return self.queue("install_voice", {"python":str(python), "device":device})
+            device = payload.get("device", self.settings["device"])
+            if device not in ("auto", "cpu", "cuda", "mps"):
+                raise ValueError("Thiết bị xử lý không hợp lệ.")
+            return self.queue("install_voice", {"device":device})
         if command == "shutdown":
             self.closing = True
             return True
@@ -418,7 +416,7 @@ class Engine:
             resultIds=ids)
 
     async def run_process(self, args, job):
-        process = await asyncio.create_subprocess_exec(*map(str, args), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, **HIDDEN)
+        process = await asyncio.create_subprocess_exec(*map(str, args), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, env=self.speech.environment(), **HIDDEN)
         async def read():
             tail = []
             while line := await process.stdout.readline():
@@ -537,6 +535,7 @@ class Engine:
 
     async def dub(self, job):
         import imageio_ffmpeg
+        await self.ensure_voice_runtime(job)
         payload = dict(job["input"])
         video = self.store.get("videos", payload["videoId"])
         if not video or not Path(video.get("file", "")).is_file():
@@ -569,16 +568,67 @@ class Engine:
         self.update_job(job, state="done", progress=100,
             message=("Đã thuyết minh và ghép video" if mode_suffix == "narration" else "Đã lồng tiếng và ghép video"), output=str(output))
 
+    async def ensure_voice_runtime(self, job):
+        device = self.settings["device"]
+        legacy = self.speech.legacy_development_python(self.settings["voicePython"])
+        if legacy:
+            return str(legacy)
+        status = self.speech.status(device)
+        if not status["supported"] or not status["ready"]:
+            raise RuntimeError(status["message"])
+        wants_cuda = device == "cuda" or (device == "auto" and not self.speech.cuda_failed and await asyncio.to_thread(self.speech.nvidia_available))
+        if wants_cuda and status["backend"] != "cuda":
+            if sys.platform != "win32":
+                raise ValueError("Trên Mac chọn Tự động, MPS hoặc CPU.")
+            try:
+                await self.prepare_cuda_runtime(job)
+            except (RuntimeError, OSError, subprocess.TimeoutExpired):
+                if device == "cuda":
+                    raise
+                self.speech.cuda_failed = True
+                self.update_job(job, message="Chưa chuẩn bị được tăng tốc NVIDIA; đang dùng môi trường CPU tích hợp.")
+        python = self.speech.selected(device)
+        if not python:
+            raise RuntimeError("Không tìm thấy môi trường giọng tích hợp trong bộ cài.")
+        self.settings["voicePython"] = str(python)
+        return str(python)
+
+    async def prepare_cuda_runtime(self, job):
+        self.update_job(job, message="Đang chuẩn bị môi trường NVIDIA riêng; lần đầu cần tải thêm thư viện…")
+        stage = self.root / "voice-runtime-cuda.preparing"
+        if not stage.exists():
+            await asyncio.to_thread(shutil.copytree, self.speech.bundle, stage, symlinks=True)
+        python = interpreter(stage)
+        await self.run_process([python, "-m", "pip", "install", "--disable-pip-version-check", "--no-cache-dir", "--force-reinstall", "--no-deps",
+            "torch==2.8.0", "torchaudio==2.8.0", "--index-url", "https://download.pytorch.org/whl/cu128"], job)
+        await self.run_process([python, "-m", "pip", "install", "--disable-pip-version-check", "--no-cache-dir", "bitsandbytes==0.48.2"], job)
+        probe = "import torch; from omnivoice import OmniVoice; import bitsandbytes; assert torch.cuda.is_available(), 'Cần cập nhật driver NVIDIA hoặc chọn CPU'; print('Đã kiểm tra tăng tốc NVIDIA')"
+        await self.run_process([python, "-c", probe], job)
+        target = self.speech.managed
+        if target.exists():
+            backup = self.root / "voice-runtime-backups" / str(uuid.uuid4())
+            backup.parent.mkdir(exist_ok=True)
+            assert target.resolve().is_relative_to(self.root) and backup.resolve().is_relative_to(self.root)
+            target.rename(backup)
+        stage.rename(target)
+        await self.run_process([interpreter(target), "-c", probe], job)
+        manifest = dict(self.speech.manifest(self.speech.bundle))
+        manifest.update(backend="cuda", supported=True)
+        (target / MANIFEST).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
     async def ensure_speech_runtime(self, job):
-        self.update_job(job, message="Đang chuẩn bị nhận dạng audio và dịch phụ đề…")
-        probe = "import faster_whisper, torch; from transformers import AutoModelForCausalLM, AutoTokenizer"
+        python = await self.ensure_voice_runtime(job)
+        if python in self.speech_checked:
+            return
+        self.update_job(job, message="Đang kiểm tra môi trường Python và OmniVoice tích hợp…")
+        probe = "import torch, faster_whisper; from omnivoice import OmniVoice; from transformers import AutoModelForCausalLM, AutoTokenizer"
         if self.settings["device"] != "cpu":
             probe += "\nif torch.cuda.is_available(): import bitsandbytes"
-        check = await asyncio.to_thread(subprocess.run,
-            [self.settings["voicePython"], "-c", probe],
-            capture_output=True, timeout=60, **HIDDEN)
+        check = await asyncio.to_thread(subprocess.run, [python, "-c", probe],
+            capture_output=True, timeout=120, env=self.speech.environment(), **HIDDEN)
         if check.returncode:
-            await self.install_asr(job, finalize=False)
+            raise RuntimeError("Môi trường giọng tích hợp không nạp được. Cài lại bộ cài DT App đầy đủ; không cần chọn Python bên ngoài.")
+        self.speech_checked.add(python)
 
     async def transcribe(self, job, finalize=True, target_language=None):
         import imageio_ffmpeg
@@ -623,32 +673,15 @@ class Engine:
         return result
 
     async def install_asr(self, job, finalize=True):
-        python = job["input"].get("python") or self.settings["voicePython"]
-        await self.run_process([python, "-m", "pip", "install", "--disable-pip-version-check", "faster-whisper==1.2.1", "av<19"], job)
-        if self.settings["device"] != "cpu":
-            cuda = await asyncio.to_thread(subprocess.run, [python, "-c", "import torch; raise SystemExit(0 if torch.cuda.is_available() else 1)"], capture_output=True, timeout=60, **HIDDEN)
-            if cuda.returncode == 0:
-                await self.run_process([python, "-m", "pip", "install", "--disable-pip-version-check", "bitsandbytes==0.48.2"], job)
-        await self.run_process([python, "-c", "from faster_whisper import WhisperModel; from transformers import AutoModelForCausalLM; print('Speech and translation ready')"], job)
+        await self.ensure_speech_runtime(job)
         self.update_job(job, **({"state":"done", "progress":100} if finalize else {}),
-            message="Đã cài Whisper và bộ dịch phụ đề. Model tải ở lần sử dụng đầu tiên.")
+            message="Python, OmniVoice và bộ xử lý phụ đề tích hợp đã sẵn sàng.")
 
     async def install_voice(self, job):
-        target = self.root / "omnivoice-venv"
-        await self.run_process([job["input"]["python"], "-m", "venv", str(target)], job)
-        python = target / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-        pip = [str(python), "-m", "pip", "install", "--disable-pip-version-check"]
-        device = job["input"]["device"]
-        args = ["torch==2.8.0", "torchaudio==2.8.0"]
-        if device in ("cuda", "cpu"):
-            args += ["--index-url", "https://download.pytorch.org/whl/" + ("cu128" if device == "cuda" else "cpu")]
-        await self.run_process(pip + args, job)
-        # Install the exact requested source revision without requiring Git on clients.
-        await self.run_process(pip + ["https://github.com/k2-fsa/OmniVoice/archive/08be0b4ccbac3e13e374e86fbfead4b4cac343e2.zip"], job)
-        await self.run_process([str(python), "-c", "from omnivoice import OmniVoice; print('OmniVoice import OK')"], job)
-        self.settings.update(voicePython=str(python), device=device)
+        self.settings["device"] = job["input"].get("device", self.settings["device"])
+        await self.ensure_speech_runtime(job)
         self.store.put("settings", self.settings)
-        self.update_job(job, state="done", progress=100, message="Đã cài và kiểm tra OmniVoice. Model sẽ tải ở lượt tạo giọng đầu tiên.")
+        self.update_job(job, state="done", progress=100, message="Môi trường giọng tích hợp đã sẵn sàng. Model tải khi dùng lần đầu.")
 
     async def worker(self, kinds):
         while not self.closing:
@@ -788,11 +821,32 @@ if __name__ == "__main__":
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--require-google", action="store_true", default=True)
     parser.add_argument("--check-browser", action="store_true")
+    parser.add_argument("--check-speech", action="store_true")
     options = parser.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stdin.reconfigure(encoding="utf-8")
-    if options.check_browser:
+    if options.check_speech:
+        speech = SpeechRuntime(options.data_dir)
+        manifest = speech.manifest(speech.bundle)
+        if not manifest:
+            raise RuntimeError("Missing bundled speech Python")
+        python = interpreter(speech.bundle)
+        supported = manifest.get("supported", False)
+        code = "import sys,json; from pathlib import Path; prefix=Path(sys.prefix).resolve(); result={'python':sys.version.split()[0],'integrated':True}"
+        if supported:
+            code += "; import torch,omnivoice,faster_whisper,transformers; from transformers import AutoModelForCausalLM; assert all(Path(m.__file__).resolve().is_relative_to(prefix) for m in (torch,omnivoice,faster_whisper,transformers)); result.update(speech=True,torch=torch.__version__)"
+        code += "; print(json.dumps(result))"
+        env = speech.environment()
+        env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1")
+        env["PATH"] = os.pathsep.join([os.path.join(os.environ.get("SystemRoot", "C:/Windows"),"System32"),os.environ.get("SystemRoot", "C:/Windows")]) if os.name == "nt" else "/usr/bin:/bin"
+        result = subprocess.run([str(python), "-I", "-c", code], capture_output=True, text=True, timeout=180, env=env, **HIDDEN)
+        if result.returncode:
+            raise RuntimeError(result.stderr[-2500:])
+        reply = json.loads(result.stdout.splitlines()[-1])
+        reply["supported"] = supported
+        print(json.dumps(reply))
+    elif options.check_browser:
         async def check_browser():
             browser = GuestBrowser(options.data_dir)
             try:

@@ -1,4 +1,4 @@
-"""Freeze only Playwright/FFmpeg. Never bundle PyTorch or model checkpoints."""
+"""Freeze Playwright/FFmpeg; private speech Python is packaged as a sibling."""
 import argparse
 from pathlib import Path
 import platform

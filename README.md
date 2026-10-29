@@ -91,7 +91,7 @@ Desktop đã chuyển sang Tauri v2. Bộ cài Windows NSIS ở `src-tauri/targe
 
 **Douyin Studio** lưu kênh tham khảo, tải video lẻ/kênh/theo lịch ngày–tuần–tháng, theo dõi video mới khi app chạy và lồng tiếng OmniVoice. Bắt buộc đăng nhập Google đã được cấp quyền DT App; Douyin vẫn dùng phiên khách, không cần tài khoản Douyin. Khả năng lấy danh sách kênh phụ thuộc giới hạn phiên khách của Douyin; xem [hướng dẫn và giới hạn thực tế](docs/DOUYIN_STUDIO.md), [báo cáo kiểm chứng](docs/DOUYIN_VALIDATION.md).
 
-OmniVoice cài riêng khi cần, không nhúng PyTorch/model vào bộ cài. Mẫu `.env.example` cho phép origin Tauri cho các công cụ poster gọi server hiện có. Dữ liệu Electron cũ có thể chuyển bằng xuất/nhập JSON; khóa API cần nhập lại.
+Bộ cài chứa Python riêng cùng OmniVoice, Whisper và thư viện dịch; không cần chọn hay cài Python hệ thống. Model tải khi dùng lần đầu. Windows có CPU sẵn và tự chuẩn bị CUDA khi phù hợp; Apple Silicon dùng MPS. Giọng trên Mac Intel hiện chưa được hỗ trợ. Mẫu `.env.example` cho phép origin Tauri cho các công cụ poster gọi server hiện có. Dữ liệu Electron cũ có thể chuyển bằng xuất/nhập JSON; khóa API cần nhập lại.
 
 ## Kiểm tra
 

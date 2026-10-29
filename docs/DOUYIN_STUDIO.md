@@ -25,12 +25,11 @@
 
 Nguồn tích hợp: [k2-fsa/OmniVoice](https://github.com/k2-fsa/OmniVoice), cố định commit `08be0b4ccbac3e13e374e86fbfead4b4cac343e2`. API dùng `OmniVoice.from_pretrained`, `generate`, `language`, `ref_audio`, `ref_text`, `instruct`, `num_step`, theo mã upstream. Chép lời dùng [SYSTRAN/faster-whisper](https://github.com/SYSTRAN/faster-whisper) 1.2.1 và giữ PyAV dưới phiên bản 19 cho tương thích.
 
-- Có Python 3.10+ trên máy: chọn thiết bị CUDA/MPS/CPU trong Cài đặt rồi **Cài OmniVoice vào môi trường riêng**, chọn tập tin Python. App tạo môi trường `omnivoice-venv` trong dữ liệu người dùng, cài PyTorch 2.8 và upstream, kiểm tra import rồi lưu cấu hình. Không cần Git trên máy client. Xem tiến độ/lỗi ở **Tác vụ**.
-- Người phát triển cũng có thể chạy `python scripts/setup-omnivoice.py --device cuda` (Windows NVIDIA), `--device mps` (Apple Silicon), hoặc `--device cpu`, rồi chọn Python được in ra trong Cài đặt.
-- Model tải ở lượt tạo giọng đầu; cần mạng và đủ đĩa/RAM/VRAM. TTS chạy ngoài worker tải video, nạp model một lần cho các đoạn của một tác vụ rồi giải phóng khi tiến trình thoát.
-- Trong **Cài đặt Douyin**, bấm **Cài Whisper chép lời từ audio** sau khi chọn Python OmniVoice. Lần đầu bấm **Chép lời audio gốc**, Whisper small tải mô hình riêng (vài trăm MB) vào dữ liệu app; xử lý bằng CPU int8 để chạy được trên Windows và Mac. Tệp SRT và đoạn audio mẫu được điền vào cửa sổ lồng tiếng để người dùng chỉnh trước khi xuất.
-- Whisper nhận dạng nguyên ngôn ngữ trong video, không tự dịch. Khi thay tiếng Trung bằng tiếng Việt, sửa/dịch SRT, chọn **Tiếng Việt**, rồi giữ đoạn audio gốc làm mẫu giọng nếu muốn.
-- macOS Universal hỗ trợ giao diện/tải video trên Intel và Apple Silicon. PyTorch mới không cung cấp wheel macOS Intel chính thức, trong khi OmniVoice yêu cầu Torch >=2.4: cài giọng tự động chỉ hỗ trợ Windows/Apple Silicon. Intel cần Python/PyTorch tự biên dịch tương thích; không cam kết OmniVoice cục bộ trên Intel khi chưa thử thực tế.
+- Bộ cài 0.2.9 chứa CPython 3.12.16 riêng cùng OmniVoice, Whisper và thư viện dịch. Không cần cài Python, chọn đường dẫn hay dùng Git trên máy khách. Cài đặt hiển thị trạng thái tích hợp và nút **Kiểm tra / chuẩn bị giọng**.
+- Windows dùng CPU ngay; chế độ Tự động tải thêm gói CUDA 12.8 vào dữ liệu app nếu máy có NVIDIA/driver phù hợp. Nếu chuẩn bị tự động thất bại, tác vụ dùng CPU; chọn CUDA trực tiếp sẽ báo lỗi cụ thể. Apple Silicon dùng MPS hoặc CPU.
+- Model nhận dạng, dịch và giọng tải ở lần đầu; cần mạng, đủ đĩa và RAM/VRAM. Các tiến trình thoát sau mỗi giai đoạn để giải phóng model.
+- Mặc định lấy audio của video -> Whisper medium nhận dạng phụ đề có mốc thời gian -> dịch sang tiếng Việt -> OmniVoice tạo giọng từ mẫu tiếng trích chính video. Có thể tạo/xem, chỉnh SRT trước khi tạo giọng. SRT được lưu cạnh video. Nhận dạng/dịch có thể sai nên cần duyệt nội dung.
+- macOS Universal hỗ trợ giao diện/tải video trên Intel và Apple Silicon. Bộ PyTorch hiện tại không hỗ trợ giọng cục bộ trên Intel; app thông báo rõ và vô hiệu hóa tạo giọng trên máy đó.
 - SRT căn từng đoạn vào mốc thời gian, văn bản thường căn theo thời lượng toàn video bằng `atempo`. Từ chối khi cần thay tốc độ quá 4 lần để không âm thầm cắt lời. Không nhận SRT chồng thời gian hoặc vượt độ dài video.
 - Giữ luồng hình gốc bằng `-c:v copy`, xuất âm AAC và MP4 mới, giữ metadata gốc (bao gồm nhãn AIGC nếu có). **Giữ âm gốc** giữ cả giọng cũ và nhạc, không phải tách nền nhạc.
 

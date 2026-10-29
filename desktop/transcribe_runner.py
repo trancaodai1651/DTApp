@@ -34,7 +34,7 @@ def main(request):
     try:
         from faster_whisper import WhisperModel
     except ImportError as error:
-        raise RuntimeError("Chưa cài Whisper. Mở Cài đặt Douyin và bấm Cài nhận dạng lời nói.") from error
+        raise RuntimeError("Bộ nhận dạng tích hợp bị thiếu. Cài lại bản DT App đầy đủ; không cần cài Python riêng.") from error
 
     source = Path(request["video"])
     work = Path(request["work"])
